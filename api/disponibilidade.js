@@ -20,13 +20,14 @@ module.exports = async function handler(req, res) {
 
   return res.status(200).json({
     success: true,
-    data,
+    data: data,
     disponivel: true,
-    horarios: [
-      "09:00",
-      "10:30",
-      "14:00",
-      "15:30"
-    ]
+
+    horario1: "09:00",
+    horario2: "10:30",
+    horario3: "14:00",
+    horario4: "15:30",
+
+    mensagem: "Tenho disponibilidade às nove horas, dez e trinta, quatorze horas ou quinze e trinta."
   });
 };
