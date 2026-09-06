@@ -31,7 +31,6 @@ module.exports = async function handler(req, res) {
     const text = await response.text();
 
     let data;
-
     try {
       data = JSON.parse(text);
     } catch {
@@ -41,6 +40,7 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({
       gotoStatus: response.status,
       gotoOk: response.ok,
+      urlUsada: url,
       conversationSpaceId,
       resposta: data
     });
