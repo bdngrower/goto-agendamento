@@ -16,8 +16,9 @@ module.exports = async function handler(req, res) {
       req.query.id || "0694093a-b82d-3815-8023-595ede98dad1";
 
     const url =
-      `https://api.goto.com/call-events/v1/conversation-spaces/` +
-      `${encodeURIComponent(conversationSpaceId)}/events`;
+      "https://api.goto.com/call-events/v1/conversation-spaces/" +
+      encodeURIComponent(conversationSpaceId) +
+      "/events";
 
     const response = await fetch(url, {
       method: "GET",
