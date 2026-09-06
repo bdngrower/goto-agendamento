@@ -93,6 +93,14 @@ function decodeHtmlEntities(text) {
   return text.replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
 }
 
+const CAMPOS_MAPEAMENTO = {
+  cpf: ["cpf_cliente"],
+  data: ["data_escolhida", "data_agendamento"],
+  nome: ["nome_cliente"],
+  horario: ["horario_escolhido", "horario_agendamento"],
+  telefone: ["número de telefone", "numero de telefone"]
+};
+
 function parseEmailHtml(htmlString) {
   const dados = { nome: null, cpf: null, telefone: null, data: null, horario: null };
   if (!htmlString) return dados;
@@ -112,11 +120,12 @@ function parseEmailHtml(htmlString) {
     if (tds.length >= 2) {
       const key = tds[0].toLowerCase();
       let val = tds[1].trim();
-      if (key.includes("horario_escolhido")) dados.horario = val;
-      else if (key.includes("nome_cliente")) dados.nome = val;
-      else if (key.includes("cpf_cliente")) dados.cpf = val;
-      else if (key.includes("data_escolhida")) dados.data = val;
-      else if (key.includes("numero de telefone") || key.includes("número de telefone")) dados.telefone = val;
+      
+      if (CAMPOS_MAPEAMENTO.horario.some(k => key.includes(k))) dados.horario = val;
+      else if (CAMPOS_MAPEAMENTO.nome.some(k => key.includes(k))) dados.nome = val;
+      else if (CAMPOS_MAPEAMENTO.cpf.some(k => key.includes(k))) dados.cpf = val;
+      else if (CAMPOS_MAPEAMENTO.data.some(k => key.includes(k))) dados.data = val;
+      else if (CAMPOS_MAPEAMENTO.telefone.some(k => key.includes(k))) dados.telefone = val;
     }
   }
   if (dados.telefone) dados.telefone = dados.telefone.replace(/[^\d+]/g, "");
@@ -175,181 +184,345 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    console.log("EMAIL GOTO ENCONTRADO");
-    const htmlContent = gotoMsg.body?.content || "";
-    const dadosExtraidos = parseEmailHtml(htmlContent);
+    let operacao = "DESCONHECIDO";
+    const subject = (gotoMsg.subject || "").toLowerCase().trim();
+    if (subject.includes("agendamento microsoft 365")) {
+      operacao = "AGENDAR";
+    } else if (subject.includes("cancelamento microsoft 365")) {
+      operacao = "CANCELAR";
+    }
 
-    const camposEncontrados = {
-      nome: !!dadosExtraidos.nome,
-      cpf: !!dadosExtraidos.cpf,
-      telefone: !!dadosExtraidos.telefone,
-      data: !!dadosExtraidos.data,
-      horario: !!dadosExtraidos.horario
-    };
+    console.log(`TIPO DE OPERACAO: ${operacao}`);
 
-    const todosEncontrados = camposEncontrados.nome && camposEncontrados.cpf && camposEncontrados.telefone && camposEncontrados.data && camposEncontrados.horario;
-
-    if (!todosEncontrados) {
+    if (operacao === "DESCONHECIDO") {
       return res.status(200).json({
         success: false,
         processed: false,
-        reason: "campos_incompletos",
-        camposEncontrados
+        reason: "operacao_desconhecida",
+        subject: gotoMsg.subject
       });
     }
 
-    console.log("DADOS DO AGENDAMENTO EXTRAIDOS");
-    const gotoCaptureId = crypto.createHash("sha256").update(gotoMsg.id).digest("hex");
-    console.log("VERIFICANDO DUPLICIDADE");
+    const htmlContent = gotoMsg.body?.content || "";
+    const dadosExtraidos = parseEmailHtml(htmlContent);
 
-    // Usa $search e ConsistencyLevel para encontrar eventos que contenham a hash globalmente
-    const searchUrl = `https://graph.microsoft.com/v1.0/users/${MAILBOX_ID}/events?$search="GoToCaptureId: ${gotoCaptureId}"`;
-    const searchResponse = await fetch(searchUrl, {
-      method: "GET",
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "ConsistencyLevel": "eventual",
-        "Content-Type": "application/json"
+    if (operacao === "AGENDAR") {
+      const camposEncontrados = {
+        nome: !!dadosExtraidos.nome,
+        cpf: !!dadosExtraidos.cpf,
+        telefone: !!dadosExtraidos.telefone,
+        data: !!dadosExtraidos.data,
+        horario: !!dadosExtraidos.horario
+      };
+
+      const todosEncontrados = camposEncontrados.nome && camposEncontrados.cpf && camposEncontrados.telefone && camposEncontrados.data && camposEncontrados.horario;
+
+      if (!todosEncontrados) {
+        return res.status(200).json({
+          success: false,
+          processed: false,
+          reason: "campos_incompletos",
+          camposEncontrados
+        });
       }
-    });
 
-    if (searchResponse.ok) {
-      const searchData = await searchResponse.json();
-      if (searchData.value && searchData.value.length > 0) {
+      console.log("DADOS DO AGENDAMENTO EXTRAIDOS");
+      const gotoCaptureId = crypto.createHash("sha256").update(gotoMsg.id).digest("hex");
+      console.log("VERIFICANDO DUPLICIDADE");
+
+      // Usa $search e ConsistencyLevel para encontrar eventos que contenham a hash globalmente
+      const searchUrl = `https://graph.microsoft.com/v1.0/users/${MAILBOX_ID}/events?$search="GoToCaptureId: ${gotoCaptureId}"`;
+      const searchResponse = await fetch(searchUrl, {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "ConsistencyLevel": "eventual",
+          "Content-Type": "application/json"
+        }
+      });
+
+      if (searchResponse.ok) {
+        const searchData = await searchResponse.json();
+        if (searchData.value && searchData.value.length > 0) {
+          console.log("CAPTURA JA PROCESSADA");
+          return res.status(200).json({
+            success: true,
+            processed: false,
+            alreadyProcessed: true,
+            eventoId: searchData.value[0].id,
+            message: "Esta captura GoTo já foi processada."
+          });
+        }
+      }
+      
+      // Fallback síncrono para evitar duplicidade devido a delay de indexação do $search
+      const inicioCheck = `${dadosExtraidos.data}T00:00:00${OFFSET}`;
+      
+      // Calcula dia seguinte
+      const [ano, mes, dia] = dadosExtraidos.data.split("-").map(Number);
+      const dateObj = new Date(Date.UTC(ano, mes - 1, dia, 12, 0, 0));
+      dateObj.setUTCDate(dateObj.getUTCDate() + 1);
+      const nextDateStr = `${dateObj.getUTCFullYear()}-${String(dateObj.getUTCMonth() + 1).padStart(2, "0")}-${String(dateObj.getUTCDate()).padStart(2, "0")}`;
+      const fimCheck = `${nextDateStr}T00:00:00${OFFSET}`;
+      
+      const fallbackEventos = await consultarCalendarView({ 
+        accessToken, 
+        inicio: inicioCheck, 
+        fim: fimCheck,
+        select: "id,subject,body,bodyPreview,start,end,isAllDay,webLink"
+      });
+      
+      const jaExiste = fallbackEventos.find(e => {
+        const conteudoCompleto = e.body?.content || "";
+        const preview = e.bodyPreview || "";
+        return conteudoCompleto.includes(gotoCaptureId) || 
+               preview.includes(gotoCaptureId) ||
+               conteudoCompleto.includes(gotoMsg.id) || 
+               preview.includes(gotoMsg.id);
+      });
+      
+      if (jaExiste) {
         console.log("CAPTURA JA PROCESSADA");
         return res.status(200).json({
           success: true,
           processed: false,
           alreadyProcessed: true,
-          eventoId: searchData.value[0].id,
+          eventoId: jaExiste.id,
           message: "Esta captura GoTo já foi processada."
         });
       }
-    }
-    
-    // Fallback síncrono para evitar duplicidade devido a delay de indexação do $search
-    const inicioCheck = `${dadosExtraidos.data}T00:00:00${OFFSET}`;
-    
-    // Calcula dia seguinte
-    const [ano, mes, dia] = dadosExtraidos.data.split("-").map(Number);
-    const dateObj = new Date(Date.UTC(ano, mes - 1, dia, 12, 0, 0));
-    dateObj.setUTCDate(dateObj.getUTCDate() + 1);
-    const nextDateStr = `${dateObj.getUTCFullYear()}-${String(dateObj.getUTCMonth() + 1).padStart(2, "0")}-${String(dateObj.getUTCDate()).padStart(2, "0")}`;
-    const fimCheck = `${nextDateStr}T00:00:00${OFFSET}`;
-    
-    const fallbackEventos = await consultarCalendarView({ 
-      accessToken, 
-      inicio: inicioCheck, 
-      fim: fimCheck,
-      select: "id,subject,body,bodyPreview,start,end,isAllDay,webLink"
-    });
-    
-    const jaExiste = fallbackEventos.find(e => {
-      const conteudoCompleto = e.body?.content || "";
-      const preview = e.bodyPreview || "";
-      return conteudoCompleto.includes(gotoCaptureId) || 
-             preview.includes(gotoCaptureId) ||
-             conteudoCompleto.includes(gotoMsg.id) || 
-             preview.includes(gotoMsg.id);
-    });
-    
-    if (jaExiste) {
-      console.log("CAPTURA JA PROCESSADA");
-      return res.status(200).json({
-        success: true,
-        processed: false,
-        alreadyProcessed: true,
-        eventoId: jaExiste.id,
-        message: "Esta captura GoTo já foi processada."
-      });
-    }
 
-    console.log("CAPTURA AINDA NAO PROCESSADA");
-    console.log("VERIFICANDO DISPONIBILIDADE");
-    const disponibilidade = await verificarIntervaloLivre({
-      accessToken,
-      data: dadosExtraidos.data,
-      horario: dadosExtraidos.horario
-    });
-
-    if (!disponibilidade.livre) {
-      return res.status(200).json({
-        success: false,
-        processed: false,
-        reason: "horario_indisponivel",
+      console.log("CAPTURA AINDA NAO PROCESSADA");
+      console.log("VERIFICANDO DISPONIBILIDADE");
+      const disponibilidade = await verificarIntervaloLivre({
+        accessToken,
         data: dadosExtraidos.data,
         horario: dadosExtraidos.horario
       });
+
+      if (!disponibilidade.livre) {
+        return res.status(200).json({
+          success: false,
+          processed: false,
+          reason: "horario_indisponivel",
+          data: dadosExtraidos.data,
+          horario: dadosExtraidos.horario
+        });
+      }
+
+      console.log("CRIANDO EVENTO OUTLOOK");
+      
+      const partesData = dadosExtraidos.data.split("-");
+      const dataExibicao = partesData.length === 3 ? `${partesData[2]}/${partesData[1]}/${partesData[0]}` : dadosExtraidos.data;
+      const cpfFormatado = formatarCpf(dadosExtraidos.cpf);
+
+      const descricao = [
+        "Agendamento criado automaticamente pela integração GoTo.",
+        "",
+        `Nome: ${dadosExtraidos.nome}`,
+        `CPF: ${cpfFormatado}`,
+        `Telefone: ${dadosExtraidos.telefone}`,
+        "",
+        `Data: ${dataExibicao}`,
+        `Horário: ${dadosExtraidos.horario}`,
+        "Origem: GoTo IA Recepcionista",
+        `GoToCaptureId: ${gotoCaptureId}`,
+        `GoToMessageId: ${gotoMsg.id}`
+      ].join("\n");
+
+      const inicio = `${dadosExtraidos.data}T${dadosExtraidos.horario}:00`;
+      const fim = disponibilidade.fim.dateTime;
+
+      const eventoPayload = {
+        subject: `Agendamento GoTo - ${dadosExtraidos.nome}`,
+        body: {
+          contentType: "Text",
+          content: descricao
+        },
+        start: {
+          dateTime: inicio,
+          timeZone: GRAPH_TIMEZONE
+        },
+        end: {
+          dateTime: fim,
+          timeZone: GRAPH_TIMEZONE
+        },
+        showAs: "busy"
+      };
+
+      const createUrl = `https://graph.microsoft.com/v1.0/users/${MAILBOX_ID}/events`;
+      const createResult = await graphRequest({
+        accessToken,
+        url: createUrl,
+        method: "POST",
+        body: eventoPayload
+      });
+
+      if (!createResult.ok) {
+        throw new Error(`Erro ao criar evento: ${JSON.stringify(createResult.data)}`);
+      }
+
+      console.log("EVENTO CRIADO COM SUCESSO");
+      
+      if (dadosExtraidos.cpf) {
+        const cpfLength = dadosExtraidos.cpf.length;
+        console.log(`CPF processado: ***${dadosExtraidos.cpf.substring(cpfLength - 2)}`);
+      }
+
+      return res.status(200).json({
+        success: true,
+        processed: true,
+        alreadyProcessed: false,
+        eventoId: createResult.data.id,
+        data: dadosExtraidos.data,
+        horario: dadosExtraidos.horario,
+        nome: dadosExtraidos.nome
+      });
+
+    } else if (operacao === "CANCELAR") {
+      console.log("DADOS DE CANCELAMENTO EXTRAIDOS");
+      
+      if (!dadosExtraidos.cpf || !dadosExtraidos.telefone || !dadosExtraidos.data) {
+         return res.status(200).json({
+           success: false,
+           processed: false,
+           reason: "dados_cancelamento_incompletos",
+           campos: { 
+             cpf: !!dadosExtraidos.cpf, 
+             telefone: !!dadosExtraidos.telefone, 
+             data: !!dadosExtraidos.data 
+           }
+         });
+      }
+
+      console.log("BUSCANDO AGENDAMENTO PARA CANCELAMENTO");
+      
+      // nome_cliente não é utilizado como chave forte de identificação,
+      // pois a transcrição da IA pode apresentar pequenas variações.
+      // CPF + telefone + data (+ horário quando disponível) são os
+      // identificadores utilizados para localizar o compromisso.
+
+      const cpfBuscado = String(dadosExtraidos.cpf).replace(/\D/g, "");
+      const telBuscado = String(dadosExtraidos.telefone).replace(/\D/g, "");
+
+      const inicioCheck = `${dadosExtraidos.data}T00:00:00${OFFSET}`;
+      const [ano, mes, dia] = dadosExtraidos.data.split("-").map(Number);
+      const dateObj = new Date(Date.UTC(ano, mes - 1, dia, 12, 0, 0));
+      dateObj.setUTCDate(dateObj.getUTCDate() + 1);
+      const nextDateStr = `${dateObj.getUTCFullYear()}-${String(dateObj.getUTCMonth() + 1).padStart(2, "0")}-${String(dateObj.getUTCDate()).padStart(2, "0")}`;
+      const fimCheck = `${nextDateStr}T00:00:00${OFFSET}`;
+
+      const eventosDia = await consultarCalendarView({ 
+        accessToken, 
+        inicio: inicioCheck, 
+        fim: fimCheck,
+        select: "id,subject,body,bodyPreview,start,end,isAllDay,webLink"
+      });
+
+      const candidatos = [];
+      for (const ev of eventosDia) {
+         const content = ev.body?.content || "";
+         const matchCpf = content.match(/CPF:\s*([^\n<]+)/i);
+         const matchTel = content.match(/Telefone:\s*([^\n<]+)/i);
+         
+         if (matchCpf && matchTel) {
+             const evCpf = matchCpf[1].replace(/\D/g, "");
+             const evTel = matchTel[1].replace(/\D/g, "");
+             if (evCpf === cpfBuscado && evTel === telBuscado) {
+                 candidatos.push(ev);
+             }
+         }
+      }
+
+      console.log(`CANDIDATOS ENCONTRADOS: ${candidatos.length}`);
+
+      let eventoAlvo = null;
+      if (candidatos.length === 1) {
+          if (dadosExtraidos.horario) {
+              const startDateTime = candidatos[0].start?.dateTime || "";
+              if (startDateTime.includes(`T${dadosExtraidos.horario}:00`)) {
+                  eventoAlvo = candidatos[0];
+              }
+          } else {
+              eventoAlvo = candidatos[0];
+          }
+      } else if (candidatos.length > 1) {
+          if (dadosExtraidos.horario) {
+              const filtradosPorHorario = candidatos.filter(e => {
+                  const startDateTime = e.start?.dateTime || "";
+                  return startDateTime.includes(`T${dadosExtraidos.horario}:00`);
+              });
+              if (filtradosPorHorario.length === 1) {
+                  eventoAlvo = filtradosPorHorario[0];
+              }
+          }
+          
+          if (!eventoAlvo) {
+              console.log("AGENDAMENTO AMBIGUO");
+              return res.status(200).json({
+                success: false,
+                processed: false,
+                reason: "agendamento_ambiguo",
+                quantidade: candidatos.length
+              });
+          }
+      }
+
+      if (!eventoAlvo) {
+          console.log("AGENDAMENTO NAO ENCONTRADO");
+          return res.status(200).json({
+            success: false,
+            processed: false,
+            reason: "agendamento_nao_encontrado",
+            data: dadosExtraidos.data,
+            horario: dadosExtraidos.horario
+          });
+      }
+
+      console.log("AGENDAMENTO IDENTIFICADO PARA CANCELAMENTO");
+      
+      const finalContent = eventoAlvo.body?.content || "";
+      const finalMatchCpf = finalContent.match(/CPF:\s*([^\n<]+)/i);
+      const finalMatchTel = finalContent.match(/Telefone:\s*([^\n<]+)/i);
+      if (!finalMatchCpf || !finalMatchTel || finalMatchCpf[1].replace(/\D/g,"") !== cpfBuscado || finalMatchTel[1].replace(/\D/g,"") !== telBuscado) {
+          return res.status(500).json({ success: false, reason: "falha_validacao_seguranca" });
+      }
+      
+      if (dadosExtraidos.horario) {
+         if (!(eventoAlvo.start?.dateTime || "").includes(`T${dadosExtraidos.horario}:00`)) {
+            return res.status(500).json({ success: false, reason: "falha_validacao_seguranca_horario" });
+         }
+      }
+
+      console.log("CANCELANDO EVENTO OUTLOOK");
+      
+      const deleteUrl = `https://graph.microsoft.com/v1.0/users/${MAILBOX_ID}/events/${eventoAlvo.id}`;
+      const deleteResult = await graphRequest({
+         accessToken,
+         url: deleteUrl,
+         method: "DELETE"
+      });
+      
+      if (!deleteResult.ok) {
+          throw new Error(`Erro ao excluir evento: ${JSON.stringify(deleteResult.data)}`);
+      }
+      
+      console.log("EVENTO CANCELADO COM SUCESSO");
+      
+      const cpfLength = cpfBuscado.length;
+      console.log(`Telefone envolvido processado. CPF final ***${cpfBuscado.substring(cpfLength - 2)}`);
+
+      return res.status(200).json({
+        success: true,
+        processed: true,
+        operacao: "cancelar",
+        cancelado: true,
+        eventoId: eventoAlvo.id,
+        data: dadosExtraidos.data,
+        horario: dadosExtraidos.horario,
+        nomeInformado: dadosExtraidos.nome
+      });
     }
-
-    console.log("CRIANDO EVENTO OUTLOOK");
-    
-    const partesData = dadosExtraidos.data.split("-");
-    const dataExibicao = partesData.length === 3 ? `${partesData[2]}/${partesData[1]}/${partesData[0]}` : dadosExtraidos.data;
-    const cpfFormatado = formatarCpf(dadosExtraidos.cpf);
-
-    const descricao = [
-      "Agendamento criado automaticamente pela integração GoTo.",
-      "",
-      `Nome: ${dadosExtraidos.nome}`,
-      `CPF: ${cpfFormatado}`,
-      `Telefone: ${dadosExtraidos.telefone}`,
-      "",
-      `Data: ${dataExibicao}`,
-      `Horário: ${dadosExtraidos.horario}`,
-      "Origem: GoTo IA Recepcionista",
-      `GoToCaptureId: ${gotoCaptureId}`,
-      `GoToMessageId: ${gotoMsg.id}`
-    ].join("\n");
-
-    const inicio = `${dadosExtraidos.data}T${dadosExtraidos.horario}:00`;
-    const fim = disponibilidade.fim.dateTime;
-
-    const eventoPayload = {
-      subject: `Agendamento GoTo - ${dadosExtraidos.nome}`,
-      body: {
-        contentType: "Text",
-        content: descricao
-      },
-      start: {
-        dateTime: inicio,
-        timeZone: GRAPH_TIMEZONE
-      },
-      end: {
-        dateTime: fim,
-        timeZone: GRAPH_TIMEZONE
-      },
-      showAs: "busy"
-    };
-
-    const createUrl = `https://graph.microsoft.com/v1.0/users/${MAILBOX_ID}/events`;
-    const createResult = await graphRequest({
-      accessToken,
-      url: createUrl,
-      method: "POST",
-      body: eventoPayload
-    });
-
-    if (!createResult.ok) {
-      throw new Error(`Erro ao criar evento: ${JSON.stringify(createResult.data)}`);
-    }
-
-    console.log("EVENTO CRIADO COM SUCESSO");
-    
-    if (dadosExtraidos.cpf) {
-      const cpfLength = dadosExtraidos.cpf.length;
-      console.log(`CPF processado: ***${dadosExtraidos.cpf.substring(cpfLength - 2)}`);
-    }
-
-    return res.status(200).json({
-      success: true,
-      processed: true,
-      alreadyProcessed: false,
-      eventoId: createResult.data.id,
-      data: dadosExtraidos.data,
-      horario: dadosExtraidos.horario,
-      nome: dadosExtraidos.nome
-    });
 
   } catch (error) {
     return res.status(500).json({
