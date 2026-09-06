@@ -35,6 +35,87 @@ async function obterAccessTokenGraph() {
   return data.access_token;
 }
 
+function decodeHtmlEntities(text) {
+  if (!text) return "";
+  return text
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+function parseEmailHtml(htmlString) {
+  const dados = {
+    nome: null,
+    cpf: null,
+    telefone: null,
+    data: null,
+    horario: null
+  };
+  
+  if (!htmlString) return dados;
+
+  const trRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  const tdRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+
+  let trMatch;
+  while ((trMatch = trRegex.exec(htmlString)) !== null) {
+    const trContent = trMatch[1];
+    
+    const tds = [];
+    let tdMatch;
+    tdRegex.lastIndex = 0;
+    while ((tdMatch = tdRegex.exec(trContent)) !== null) {
+      let text = tdMatch[1].replace(/<[^>]+>/g, "");
+      text = decodeHtmlEntities(text).trim();
+      tds.push(text);
+    }
+
+    if (tds.length >= 2) {
+      const key = tds[0].toLowerCase();
+      let val = tds[1].trim();
+
+      if (key.includes("horario_escolhido")) {
+        dados.horario = val;
+      } else if (key.includes("nome_cliente")) {
+        dados.nome = val;
+      } else if (key.includes("cpf_cliente")) {
+        dados.cpf = val;
+      } else if (key.includes("data_escolhida")) {
+        dados.data = val;
+      } else if (key.includes("numero de telefone") || key.includes("número de telefone")) {
+        dados.telefone = val;
+      }
+    }
+  }
+
+  if (dados.telefone) {
+    dados.telefone = dados.telefone.replace(/[^\d+]/g, "");
+  }
+  
+  if (dados.data) {
+    const d = dados.data.match(/(\d{4}-\d{2}-\d{2})/);
+    if (d) {
+      dados.data = d[1];
+    } else {
+      dados.data = null;
+    }
+  }
+
+  if (dados.horario) {
+    const h = dados.horario.match(/(\d{2}:\d{2})/);
+    if (h) {
+      dados.horario = h[1];
+    } else {
+      dados.horario = null;
+    }
+  }
+
+  return dados;
+}
+
 module.exports = async function handler(req, res) {
   try {
     if (req.method !== "GET") {
@@ -83,14 +164,39 @@ module.exports = async function handler(req, res) {
 
     if (gotoMsg) {
       console.log("EMAIL GOTO ENCONTRADO");
+      
+      const htmlContent = gotoMsg.body?.content || "";
+      const dadosExtraidos = parseEmailHtml(htmlContent);
+
+      const camposEncontrados = {
+        nome: !!dadosExtraidos.nome,
+        cpf: !!dadosExtraidos.cpf,
+        telefone: !!dadosExtraidos.telefone,
+        data: !!dadosExtraidos.data,
+        horario: !!dadosExtraidos.horario
+      };
+
+      const todosEncontrados = 
+        camposEncontrados.nome && 
+        camposEncontrados.cpf && 
+        camposEncontrados.telefone && 
+        camposEncontrados.data && 
+        camposEncontrados.horario;
+
+      if (!todosEncontrados) {
+        return res.status(200).json({
+          success: false,
+          message: "E-mail GoTo encontrado, mas existem campos obrigatórios ausentes.",
+          camposEncontrados
+        });
+      }
+
       return res.status(200).json({
         success: true,
         messageId: gotoMsg.id,
-        subject: gotoMsg.subject,
         receivedDateTime: gotoMsg.receivedDateTime,
-        from: gotoMsg.from?.emailAddress?.address,
-        bodyPreview: gotoMsg.bodyPreview,
-        body: gotoMsg.body
+        dados: dadosExtraidos,
+        camposEncontrados
       });
     } else {
       console.log("NENHUM EMAIL GOTO ENCONTRADO");
