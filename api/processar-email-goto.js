@@ -172,7 +172,7 @@ module.exports = async function handler(req, res) {
     console.log("TOKEN GRAPH OK");
     console.log("BUSCANDO EMAILS GOTO");
 
-    const endpoint = `https://graph.microsoft.com/v1.0/users/${MAILBOX_ID}/mailFolders/inbox/messages?$top=20&$select=id,subject,receivedDateTime,from,body,bodyPreview&$orderby=receivedDateTime desc`;
+    const endpoint = `https://graph.microsoft.com/v1.0/users/${MAILBOX_ID}/mailFolders/inbox/messages?$top=50&$select=id,subject,receivedDateTime,from,body,bodyPreview&$orderby=receivedDateTime desc`;
     const response = await fetch(endpoint, {
       method: "GET",
       headers: {
@@ -188,42 +188,40 @@ module.exports = async function handler(req, res) {
     }
 
     const data = await response.json();
+    
+    let operacao = "DESCONHECIDO";
     const gotoMsg = (data.value || []).find(msg => {
       const emailAddress = msg.from?.emailAddress?.address || "";
-      return emailAddress.toLowerCase() === "noreply@dwf.goto.com";
+      if (emailAddress.toLowerCase() !== "noreply@dwf.goto.com") {
+         return false;
+      }
+      
+      let subject = String(msg.subject || "").trim();
+      // Remover acentos e espaços duplicados, e transformar em lowercase
+      subject = subject.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ");
+
+      if (subject.includes("cancelamento")) {
+        operacao = "CANCELAR";
+        return true;
+      } else if (subject.includes("reagendamento")) {
+        operacao = "REAGENDAR";
+        return true;
+      } else if (subject.includes("agendamento")) {
+        operacao = "AGENDAR";
+        return true;
+      }
+      return false;
     });
 
     if (!gotoMsg) {
       return res.status(200).json({
         success: false,
         processed: false,
-        reason: "email_nao_encontrado"
+        reason: "nenhum_email_goto_pendente"
       });
-    }
-
-    let operacao = "DESCONHECIDO";
-    let subject = String(gotoMsg.subject || "").trim();
-    // Remover acentos e espaços duplicados, e transformar em lowercase
-    subject = subject.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ");
-
-    if (subject.includes("cancelamento")) {
-      operacao = "CANCELAR";
-    } else if (subject.includes("reagendamento")) {
-      operacao = "REAGENDAR";
-    } else if (subject.includes("agendamento")) {
-      operacao = "AGENDAR";
     }
 
     console.log(`TIPO DE OPERACAO: ${operacao}`);
-
-    if (operacao === "DESCONHECIDO") {
-      return res.status(200).json({
-        success: false,
-        processed: false,
-        reason: "operacao_desconhecida",
-        subject: gotoMsg.subject
-      });
-    }
 
     const htmlContent = gotoMsg.body?.content || "";
     const dadosExtraidos = parseEmailHtml(htmlContent);
