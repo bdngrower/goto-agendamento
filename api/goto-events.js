@@ -5,8 +5,6 @@ const GOTO_ACCOUNT_KEY = "5316599808366110732";
 const FORMULARIO_AGENDAMENTO =
   "Agendamento Microsoft 365";
 
-const TIMEZONE = "America/Sao_Paulo";
-
 
 // ============================================================
 // PROTEÇÃO LOCAL CONTRA PROCESSAMENTO DUPLICADO
@@ -25,7 +23,7 @@ function esperar(ms) {
 
 
 // ============================================================
-// OBTÉM NOVO ACCESS TOKEN DO GOTO
+// OBTÉM ACCESS TOKEN DO GOTO
 // ============================================================
 
 async function obterAccessTokenGoTo() {
@@ -69,11 +67,8 @@ async function obterAccessTokenGoTo() {
       },
 
       body: new URLSearchParams({
-        grant_type:
-          "refresh_token",
-
-        refresh_token:
-          refreshToken
+        grant_type: "refresh_token",
+        refresh_token: refreshToken
       })
     }
   );
@@ -84,8 +79,7 @@ async function obterAccessTokenGoTo() {
   let data;
 
   try {
-    data =
-      JSON.parse(text);
+    data = JSON.parse(text);
   } catch {
     data = text;
   }
@@ -103,28 +97,6 @@ async function obterAccessTokenGoTo() {
   }
 
   return data.access_token;
-}
-
-
-// ============================================================
-// VERIFICA INFO_CAPTURE
-// ============================================================
-
-function possuiCapturaAgendamento(relatorio) {
-  const actions =
-    Array.isArray(relatorio?.actions)
-      ? relatorio.actions
-      : [];
-
-  return actions.some((action) => {
-    return (
-      action?.type?.value ===
-        "INFO_CAPTURE" &&
-
-      action?.type?.form?.name ===
-        FORMULARIO_AGENDAMENTO
-    );
-  });
 }
 
 
@@ -161,8 +133,7 @@ async function consultarRelatorio(
   let data;
 
   try {
-    data =
-      JSON.parse(text);
+    data = JSON.parse(text);
   } catch {
     data = text;
   }
@@ -180,37 +151,45 @@ async function consultarRelatorio(
 
 
 // ============================================================
-// AGUARDA O REPORT CONTER INFO_CAPTURE
+// VERIFICA INFO_CAPTURE DO NOSSO FORMULÁRIO
 // ============================================================
 
-async function obterRelatorioCompleto(
+function possuiCapturaAgendamento(
+  relatorio
+) {
+  const actions =
+    Array.isArray(relatorio?.actions)
+      ? relatorio.actions
+      : [];
+
+  return actions.some(
+    (action) =>
+      action?.type?.value ===
+        "INFO_CAPTURE" &&
+
+      action?.type?.form?.name ===
+        FORMULARIO_AGENDAMENTO
+  );
+}
+
+
+// ============================================================
+// AGUARDA REPORT TER INFO_CAPTURE
+// ============================================================
+
+async function obterRelatorio(
   conversationSpaceId,
   accessToken
 ) {
-  /*
-   * Não dependemos mais de callReason.
-   *
-   * Os testes mostraram que:
-   *
-   * - INFO_CAPTURE aparece;
-   * - callReason pode continuar undefined
-   *   indefinidamente.
-   *
-   * Portanto o critério agora é:
-   *
-   * INFO_CAPTURE do nosso formulário encontrado.
-   */
-
   const maxTentativas = 10;
   const intervaloMs = 2000;
 
   let ultimoRelatorio = null;
 
   console.log(
-    "Aguardando INFO_CAPTURE no Call Events Report..."
+    "Aguardando Call Events Report..."
   );
 
-  // Pequeno atraso inicial para o GoTo terminar o pós-processamento.
   await esperar(2000);
 
   for (
@@ -229,9 +208,9 @@ async function obterRelatorioCompleto(
       );
 
 
-    // ==========================================================
-    // 404
-    // ==========================================================
+    // ----------------------------------------------------------
+    // AINDA NÃO EXISTE
+    // ----------------------------------------------------------
 
     if (
       resultado.status === 404
@@ -252,14 +231,14 @@ async function obterRelatorioCompleto(
       }
 
       throw new Error(
-        "Call Events Report permaneceu 404 até o limite de tentativas"
+        "Call Events Report permaneceu 404 até o limite"
       );
     }
 
 
-    // ==========================================================
-    // OUTROS ERROS
-    // ==========================================================
+    // ----------------------------------------------------------
+    // OUTRO ERRO
+    // ----------------------------------------------------------
 
     if (!resultado.ok) {
       throw new Error(
@@ -289,13 +268,6 @@ async function obterRelatorioCompleto(
       );
 
 
-    const callReason =
-      typeof relatorio?.callReason ===
-        "string"
-        ? relatorio.callReason
-        : null;
-
-
     console.log(
       "Estado do Report:",
       JSON.stringify({
@@ -308,18 +280,15 @@ async function obterRelatorioCompleto(
           actions.length,
 
         callReason:
-          !!callReason
+          typeof relatorio?.callReason ===
+            "string"
       })
     );
 
 
-    // ==========================================================
-    // INFO_CAPTURE ENCONTRADO
-    // ==========================================================
-
     if (temInfoCapture) {
       console.log(
-        "INFO_CAPTURE encontrado. Report pronto para análise."
+        "INFO_CAPTURE encontrado."
       );
 
       return relatorio;
@@ -330,10 +299,6 @@ async function obterRelatorioCompleto(
       tentativa <
       maxTentativas
     ) {
-      console.log(
-        "INFO_CAPTURE ainda não apareceu. Aguardando..."
-      );
-
       await esperar(
         intervaloMs
       );
@@ -341,682 +306,314 @@ async function obterRelatorioCompleto(
   }
 
 
-  console.log(
-    "Limite atingido. Usando último Report disponível."
-  );
-
   return ultimoRelatorio;
 }
 
 
 // ============================================================
-// COLETA TEXTOS ÚTEIS
+// CONVERTE VALOR PARA TEXTO PESQUISÁVEL
 // ============================================================
 
-function obterTextosDaInteracao(
-  relatorio
-) {
-  const textos = [];
-
-  const actions =
-    Array.isArray(relatorio?.actions)
-      ? relatorio.actions
-      : [];
-
-
-  for (
-    const action of actions
+function valorParaTexto(valor) {
+  if (
+    valor === null ||
+    valor === undefined
   ) {
-    const query =
-      action?.type?.query;
+    return "";
+  }
+
+  if (
+    typeof valor === "string"
+  ) {
+    return valor;
+  }
+
+  if (
+    typeof valor === "number" ||
+    typeof valor === "boolean"
+  ) {
+    return String(valor);
+  }
+
+  try {
+    return JSON.stringify(valor);
+  } catch {
+    return "";
+  }
+}
+
+
+// ============================================================
+// PROCURA RECURSIVAMENTE DADOS INTERESSANTES
+// ============================================================
+
+function procurarDadosInteressantes(
+  valor,
+  caminho = "root",
+  encontrados = []
+) {
+  if (
+    valor === null ||
+    valor === undefined
+  ) {
+    return encontrados;
+  }
+
+
+  const palavras = [
+    "air_",
+    "air",
+    "ai_insight",
+    "ai insight",
+    "appointment",
+    "scheduling",
+    "schedule",
+    "agendamento",
+    "agendar",
+    "horario",
+    "horário",
+    "transcript",
+    "livetranscript",
+    "recording",
+    "receptionist",
+    "virtualreceptionist",
+    "virtual receptionist",
+    "info_capture",
+    "form",
+    "eventid",
+    "query",
+    "conversation"
+  ];
+
+
+  // ----------------------------------------------------------
+  // STRING
+  // ----------------------------------------------------------
+
+  if (
+    typeof valor === "string"
+  ) {
+    const texto =
+      valor
+        .toLowerCase();
 
     if (
-      typeof query ===
-        "string" &&
-      query.trim()
+      palavras.some(
+        (palavra) =>
+          texto.includes(
+            palavra
+          )
+      )
     ) {
-      textos.push(
-        query.trim()
-      );
+      encontrados.push({
+        caminho,
+        valor
+      });
     }
+
+    return encontrados;
+  }
+
+
+  // ----------------------------------------------------------
+  // ARRAY
+  // ----------------------------------------------------------
+
+  if (
+    Array.isArray(valor)
+  ) {
+    valor.forEach(
+      (item, index) => {
+        procurarDadosInteressantes(
+          item,
+          `${caminho}[${index}]`,
+          encontrados
+        );
+      }
+    );
+
+    return encontrados;
+  }
+
+
+  // ----------------------------------------------------------
+  // OBJETO
+  // ----------------------------------------------------------
+
+  if (
+    typeof valor === "object"
+  ) {
+    Object.entries(
+      valor
+    ).forEach(
+      ([chave, conteudo]) => {
+        const chaveNormalizada =
+          chave
+            .toLowerCase();
+
+
+        const chaveInteressante =
+          palavras.some(
+            (palavra) =>
+              chaveNormalizada.includes(
+                palavra
+              )
+          );
+
+
+        if (
+          chaveInteressante
+        ) {
+          encontrados.push({
+            caminho:
+              `${caminho}.${chave}`,
+
+            valor:
+              conteudo
+          });
+        }
+
+
+        procurarDadosInteressantes(
+          conteudo,
+          `${caminho}.${chave}`,
+          encontrados
+        );
+      }
+    );
+  }
+
+
+  return encontrados;
+}
+
+
+// ============================================================
+// PROCURA STRINGS COM POSSÍVEIS HORÁRIOS
+// ============================================================
+
+function procurarPossiveisHorarios(
+  valor,
+  caminho = "root",
+  encontrados = []
+) {
+  if (
+    valor === null ||
+    valor === undefined
+  ) {
+    return encontrados;
   }
 
 
   if (
-    typeof relatorio?.callReason ===
-      "string" &&
-    relatorio.callReason.trim()
+    typeof valor === "string"
   ) {
-    textos.push(
-      relatorio.callReason.trim()
+    const texto =
+      valor.toLowerCase();
+
+
+    const padroes = [
+      /\b([01]?\d|2[0-3]):([0-5]\d)\b/,
+      /\b([01]?\d|2[0-3])h([0-5]\d)\b/,
+      /\b([01]?\d|2[0-3])\s*h\b/,
+      /(?:às|as)\s+([01]?\d|2[0-3])/,
+      /\bmeia\b/,
+      /\bhoras?\b/
+    ];
+
+
+    if (
+      padroes.some(
+        (regex) =>
+          regex.test(texto)
+      )
+    ) {
+      encontrados.push({
+        caminho,
+        valor
+      });
+    }
+
+
+    return encontrados;
+  }
+
+
+  if (
+    Array.isArray(valor)
+  ) {
+    valor.forEach(
+      (item, index) => {
+        procurarPossiveisHorarios(
+          item,
+          `${caminho}[${index}]`,
+          encontrados
+        );
+      }
     );
+
+    return encontrados;
+  }
+
+
+  if (
+    typeof valor === "object"
+  ) {
+    Object.entries(
+      valor
+    ).forEach(
+      ([chave, conteudo]) => {
+        procurarPossiveisHorarios(
+          conteudo,
+          `${caminho}.${chave}`,
+          encontrados
+        );
+      }
+    );
+  }
+
+
+  return encontrados;
+}
+
+
+// ============================================================
+// REMOVE RESULTADOS DUPLICADOS
+// ============================================================
+
+function removerDuplicados(
+  itens
+) {
+  const mapa =
+    new Map();
+
+
+  for (
+    const item of itens
+  ) {
+    const chave =
+      `${item.caminho}|${valorParaTexto(item.valor)}`;
+
+
+    if (
+      !mapa.has(chave)
+    ) {
+      mapa.set(
+        chave,
+        item
+      );
+    }
   }
 
 
   return [
-    ...new Set(textos)
+    ...mapa.values()
   ];
 }
 
 
 // ============================================================
-// NORMALIZA TEXTO
-// ============================================================
-
-function normalizarTexto(texto) {
-  return texto
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(
-      /[\u0300-\u036f]/g,
-      ""
-    );
-}
-
-
-// ============================================================
-// CONVERTE HORA POR EXTENSO
-// ============================================================
-
-function numeroPorExtenso(texto) {
-  const normalizado =
-    normalizarTexto(texto);
-
-  const mapa = {
-    zero: 0,
-
-    um: 1,
-    uma: 1,
-
-    dois: 2,
-    duas: 2,
-
-    tres: 3,
-    quatro: 4,
-    cinco: 5,
-    seis: 6,
-    sete: 7,
-    oito: 8,
-    nove: 9,
-
-    dez: 10,
-    onze: 11,
-    doze: 12,
-    treze: 13,
-
-    quatorze: 14,
-    catorze: 14,
-
-    quinze: 15,
-
-    dezesseis: 16,
-    dezasseis: 16,
-
-    dezessete: 17,
-    dezassete: 17,
-
-    dezoito: 18,
-    dezenove: 19,
-    vinte: 20
-  };
-
-  return mapa[
-    normalizado
-  ];
-}
-
-
-// ============================================================
-// EXTRAI HORÁRIO DOS TEXTOS
-// ============================================================
-
-function extrairHorario(
-  textos
-) {
-  for (
-    const textoOriginal
-    of textos
-  ) {
-    const texto =
-      textoOriginal.toLowerCase();
-
-
-    // ==========================================================
-    // 14:45
-    // ==========================================================
-
-    let match =
-      texto.match(
-        /\b([01]?\d|2[0-3]):([0-5]\d)\b/
-      );
-
-    if (match) {
-      return (
-        String(
-          Number(match[1])
-        ).padStart(
-          2,
-          "0"
-        ) +
-        ":" +
-        match[2]
-      );
-    }
-
-
-    // ==========================================================
-    // 14h45 / 14 h 45
-    // ==========================================================
-
-    match =
-      texto.match(
-        /\b([01]?\d|2[0-3])\s*h\s*([0-5]\d)\b/
-      );
-
-    if (match) {
-      return (
-        String(
-          Number(match[1])
-        ).padStart(
-          2,
-          "0"
-        ) +
-        ":" +
-        match[2]
-      );
-    }
-
-
-    // ==========================================================
-    // 14h
-    // ==========================================================
-
-    match =
-      texto.match(
-        /\b([01]?\d|2[0-3])\s*h\b/
-      );
-
-    if (match) {
-      return (
-        String(
-          Number(match[1])
-        ).padStart(
-          2,
-          "0"
-        ) +
-        ":00"
-      );
-    }
-
-
-    // ==========================================================
-    // às 17 horas / às 17
-    // ==========================================================
-
-    match =
-      texto.match(
-        /(?:às|as)\s+([01]?\d|2[0-3])(?:\s*horas?)?\b/
-      );
-
-    if (match) {
-      return (
-        String(
-          Number(match[1])
-        ).padStart(
-          2,
-          "0"
-        ) +
-        ":00"
-      );
-    }
-
-
-    // ==========================================================
-    // às dez e meia
-    // ==========================================================
-
-    match =
-      texto.match(
-        /(?:às|as)\s+([a-záéíóúâêôãõç]+)\s+e\s+meia/
-      );
-
-    if (match) {
-      const hora =
-        numeroPorExtenso(
-          match[1]
-        );
-
-      if (
-        Number.isInteger(
-          hora
-        ) &&
-        hora >= 0 &&
-        hora <= 23
-      ) {
-        return (
-          String(
-            hora
-          ).padStart(
-            2,
-            "0"
-          ) +
-          ":30"
-        );
-      }
-    }
-
-
-    // ==========================================================
-    // às quatorze horas
-    // ==========================================================
-
-    match =
-      texto.match(
-        /(?:às|as)\s+([a-záéíóúâêôãõç]+)\s+horas?/
-      );
-
-    if (match) {
-      const hora =
-        numeroPorExtenso(
-          match[1]
-        );
-
-      if (
-        Number.isInteger(
-          hora
-        ) &&
-        hora >= 0 &&
-        hora <= 23
-      ) {
-        return (
-          String(
-            hora
-          ).padStart(
-            2,
-            "0"
-          ) +
-          ":00"
-        );
-      }
-    }
-  }
-
-
-  return null;
-}
-
-
-// ============================================================
-// DATA LOCAL
-// ============================================================
-
-function dataLocalISO(
-  date
-) {
-  const partes =
-    new Intl
-      .DateTimeFormat(
-        "en-CA",
-        {
-          timeZone:
-            TIMEZONE,
-
-          year:
-            "numeric",
-
-          month:
-            "2-digit",
-
-          day:
-            "2-digit"
-        }
-      )
-      .formatToParts(
-        date
-      );
-
-
-  const ano =
-    partes.find(
-      (p) =>
-        p.type === "year"
-    )?.value;
-
-
-  const mes =
-    partes.find(
-      (p) =>
-        p.type === "month"
-    )?.value;
-
-
-  const dia =
-    partes.find(
-      (p) =>
-        p.type === "day"
-    )?.value;
-
-
-  return (
-    `${ano}-${mes}-${dia}`
-  );
-}
-
-
-// ============================================================
-// EXTRAI DATA
-// ============================================================
-
-function extrairData(
-  textos,
-  callCreated
-) {
-  // ============================================================
-  // DATA ESCRITA
-  // ============================================================
-
-  for (
-    const textoOriginal
-    of textos
-  ) {
-    const texto =
-      textoOriginal
-        .toLowerCase();
-
-
-    const match =
-      texto.match(
-        /(?:dia\s+)?(\d{1,2})\s+de\s+([a-zçã]+)\s+de\s+(\d{4})/
-      );
-
-
-    if (match) {
-      const dia =
-        Number(
-          match[1]
-        );
-
-
-      const nomeMes =
-        normalizarTexto(
-          match[2]
-        );
-
-
-      const meses = {
-        janeiro: 1,
-        fevereiro: 2,
-        marco: 3,
-        abril: 4,
-        maio: 5,
-        junho: 6,
-        julho: 7,
-        agosto: 8,
-        setembro: 9,
-        outubro: 10,
-        novembro: 11,
-        dezembro: 12
-      };
-
-
-      const mes =
-        meses[
-          nomeMes
-        ];
-
-
-      const ano =
-        Number(
-          match[3]
-        );
-
-
-      if (mes) {
-        return (
-          `${ano}-` +
-          `${String(
-            mes
-          ).padStart(
-            2,
-            "0"
-          )}-` +
-          `${String(
-            dia
-          ).padStart(
-            2,
-            "0"
-          )}`
-        );
-      }
-    }
-  }
-
-
-  // ============================================================
-  // AMANHÃ
-  // ============================================================
-
-  const temAmanha =
-    textos.some(
-      (texto) =>
-        normalizarTexto(
-          texto
-        ).includes(
-          "amanha"
-        )
-    );
-
-
-  if (temAmanha) {
-    const criada =
-      new Date(
-        callCreated
-      );
-
-
-    const dataLocal =
-      dataLocalISO(
-        criada
-      );
-
-
-    const [
-      ano,
-      mes,
-      dia
-    ] =
-      dataLocal
-        .split("-")
-        .map(Number);
-
-
-    const base =
-      new Date(
-        Date.UTC(
-          ano,
-          mes - 1,
-          dia,
-          12,
-          0,
-          0
-        )
-      );
-
-
-    base.setUTCDate(
-      base.getUTCDate() + 1
-    );
-
-
-    return (
-      `${base.getUTCFullYear()}-` +
-      `${String(
-        base.getUTCMonth() + 1
-      ).padStart(
-        2,
-        "0"
-      )}-` +
-      `${String(
-        base.getUTCDate()
-      ).padStart(
-        2,
-        "0"
-      )}`
-    );
-  }
-
-
-  // ============================================================
-  // HOJE
-  // ============================================================
-
-  const temHoje =
-    textos.some(
-      (texto) =>
-        normalizarTexto(
-          texto
-        ).includes(
-          "hoje"
-        )
-    );
-
-
-  if (temHoje) {
-    return dataLocalISO(
-      new Date(
-        callCreated
-      )
-    );
-  }
-
-
-  return null;
-}
-
-
-// ============================================================
-// TELEFONE
-// ============================================================
-
-function obterTelefone(
-  relatorio
-) {
-  const participantes =
-    Array.isArray(
-      relatorio?.participants
-    )
-      ? relatorio.participants
-      : [];
-
-
-  for (
-    const participante
-    of participantes
-  ) {
-    const caller =
-      participante
-        ?.type
-        ?.caller
-        ?.number;
-
-
-    if (caller) {
-      return caller;
-    }
-  }
-
-
-  return "";
-}
-
-
-// ============================================================
-// CHAMA /API/AGENDAR
-// ============================================================
-
-async function criarAgendamento({
-  data,
-  horario,
-  telefone,
-  conversationSpaceId
-}) {
-  const apiKey =
-    process.env
-      .GOTO_API_KEY;
-
-
-  if (!apiKey) {
-    throw new Error(
-      "GOTO_API_KEY não configurada"
-    );
-  }
-
-
-  const response =
-    await fetch(
-      "https://goto-agendamento.vercel.app/api/agendar",
-      {
-        method:
-          "POST",
-
-        headers: {
-          "Content-Type":
-            "application/json",
-
-          "x-api-key":
-            apiKey
-        },
-
-        body:
-          JSON.stringify({
-            data,
-            horario,
-
-            nome:
-              telefone
-                ? `Telefone ${telefone}`
-                : "Cliente GoTo",
-
-            telefone,
-
-            conversationSpaceId
-          })
-      }
-    );
-
-
-  const text =
-    await response.text();
-
-
-  let result;
-
-
-  try {
-    result =
-      JSON.parse(
-        text
-      );
-  } catch {
-    result =
-      text;
-  }
-
-
-  return {
-    status:
-      response.status,
-
-    ok:
-      response.ok,
-
-    result
-  };
-}
-
-
-// ============================================================
-// PROCESSAMENTO DA CHAMADA
+// PROCESSAMENTO DE DIAGNÓSTICO
 // ============================================================
 
 async function processarChamada(
@@ -1043,7 +640,11 @@ async function processarChamada(
 
   try {
     console.log(
-      "========== PROCESSAMENTO BACKGROUND =========="
+      "=================================================="
+    );
+
+    console.log(
+      "===== DIAGNÓSTICO AVANÇADO GOTO ====="
     );
 
     console.log(
@@ -1051,21 +652,25 @@ async function processarChamada(
       conversationSpaceId
     );
 
+    console.log(
+      "=================================================="
+    );
 
-    // ==========================================================
-    // TOKEN GOTO
-    // ==========================================================
+
+    // ----------------------------------------------------------
+    // TOKEN
+    // ----------------------------------------------------------
 
     const accessToken =
       await obterAccessTokenGoTo();
 
 
-    // ==========================================================
-    // RELATÓRIO
-    // ==========================================================
+    // ----------------------------------------------------------
+    // REPORT
+    // ----------------------------------------------------------
 
     const relatorio =
-      await obterRelatorioCompleto(
+      await obterRelatorio(
         conversationSpaceId,
         accessToken
       );
@@ -1081,7 +686,69 @@ async function processarChamada(
 
 
     // ==========================================================
-    // ACTIONS COMPLETAS
+    // RESUMO
+    // ==========================================================
+
+    console.log(
+      "===== RESUMO DO REPORT ====="
+    );
+
+    console.log(
+      JSON.stringify(
+        {
+          id:
+            relatorio?.id ||
+            null,
+
+          callCreated:
+            relatorio?.callCreated ||
+            null,
+
+          callEnded:
+            relatorio?.callEnded ||
+            null,
+
+          direction:
+            relatorio?.direction ||
+            null,
+
+          accountKey:
+            relatorio?.accountKey ||
+            null,
+
+          callReason:
+            relatorio?.callReason ||
+            null,
+
+          quantidadeActions:
+            Array.isArray(
+              relatorio?.actions
+            )
+              ? relatorio.actions.length
+              : 0,
+
+          quantidadeCallStates:
+            Array.isArray(
+              relatorio?.callStates
+            )
+              ? relatorio.callStates.length
+              : 0,
+
+          quantidadeParticipants:
+            Array.isArray(
+              relatorio?.participants
+            )
+              ? relatorio.participants.length
+              : 0
+        },
+        null,
+        2
+      )
+    );
+
+
+    // ==========================================================
+    // ACTIONS
     // ==========================================================
 
     const actions =
@@ -1093,11 +760,7 @@ async function processarChamada(
 
 
     console.log(
-      "=========================================="
-    );
-
-    console.log(
-      "ACTIONS COMPLETAS:"
+      "===== ACTIONS COMPLETAS ====="
     );
 
     console.log(
@@ -1108,31 +771,106 @@ async function processarChamada(
       )
     );
 
+
+    // ==========================================================
+    // TIPOS DAS ACTIONS
+    // ==========================================================
+
+    const tiposActions =
+      actions.map(
+        (action, index) => ({
+          index,
+
+          timestamp:
+            action?.timestamp ||
+            null,
+
+          value:
+            action?.type?.value ||
+            null,
+
+          eventId:
+            action?.type?.eventId ||
+            null,
+
+          query:
+            action?.type?.query ||
+            null,
+
+          form:
+            action?.type?.form ||
+            null
+        })
+      );
+
+
     console.log(
-      "=========================================="
+      "===== RESUMO DAS ACTIONS ====="
+    );
+
+    console.log(
+      JSON.stringify(
+        tiposActions,
+        null,
+        2
+      )
     );
 
 
     // ==========================================================
-    // INFO_CAPTURE COMPLETO
+    // ACTIONS AIR
+    // ==========================================================
+
+    const actionsAIR =
+      actions.filter(
+        (action) => {
+          const texto =
+            JSON.stringify(
+              action
+            ).toLowerCase();
+
+          return (
+            texto.includes(
+              "air_"
+            ) ||
+            texto.includes(
+              "scheduling"
+            ) ||
+            texto.includes(
+              "appointment"
+            )
+          );
+        }
+      );
+
+
+    console.log(
+      "===== ACTIONS AIR / SCHEDULING ====="
+    );
+
+    console.log(
+      JSON.stringify(
+        actionsAIR,
+        null,
+        2
+      )
+    );
+
+
+    // ==========================================================
+    // INFO_CAPTURE
     // ==========================================================
 
     const infoCaptures =
       actions.filter(
         (action) =>
-          action
-            ?.type
-            ?.value ===
+          action?.type?.value ===
           "INFO_CAPTURE"
       );
 
 
     console.log(
-      "=========================================="
-    );
-
-    console.log(
-      "INFO_CAPTURE COMPLETO:"
+      "===== INFO_CAPTURE ====="
     );
 
     console.log(
@@ -1143,92 +881,26 @@ async function processarChamada(
       )
     );
 
-    console.log(
-      "=========================================="
-    );
-
 
     // ==========================================================
-    // FORMULÁRIO ESPECÍFICO
+    // CALL STATES
     // ==========================================================
 
-    const infoCaptureAgendamento =
-      infoCaptures.find(
-        (action) =>
-          action
-            ?.type
-            ?.form
-            ?.name ===
-          FORMULARIO_AGENDAMENTO
-      );
-
-
-    console.log(
-      "=========================================="
-    );
-
-    console.log(
-      "INFO_CAPTURE AGENDAMENTO:"
-    );
-
-    console.log(
-      JSON.stringify(
-        infoCaptureAgendamento ||
-        null,
-        null,
-        2
+    const callStates =
+      Array.isArray(
+        relatorio?.callStates
       )
-    );
-
-    console.log(
-      "=========================================="
-    );
-
-
-    // ==========================================================
-    // CALL REASON
-    // ==========================================================
-
-    console.log(
-      "Call Reason final:",
-      relatorio?.callReason ||
-        null
-    );
-
-
-    // ==========================================================
-    // CONFIRMA INFO_CAPTURE
-    // ==========================================================
-
-    const possuiCaptura =
-      possuiCapturaAgendamento(
-        relatorio
-      );
-
-
-    if (!possuiCaptura) {
-      console.log(
-        "Ignorado: INFO_CAPTURE do formulário de agendamento não encontrado."
-      );
-
-      return;
-    }
-
-
-    // ==========================================================
-    // TEXTOS PARA EXTRAÇÃO
-    // ==========================================================
-
-    const textos =
-      obterTextosDaInteracao(
-        relatorio
-      );
+        ? relatorio.callStates
+        : [];
 
 
     console.log(
-      "TEXTOS PARA EXTRAÇÃO:",
+      "===== CALL STATES COMPLETOS ====="
+    );
+
+    console.log(
       JSON.stringify(
-        textos,
+        callStates,
         null,
         2
       )
@@ -1236,53 +908,48 @@ async function processarChamada(
 
 
     // ==========================================================
-    // EXTRAI HORÁRIO
+    // CALL STATES DA IA RECEPCIONISTA
     // ==========================================================
 
-    const horario =
-      extrairHorario(
-        textos
+    const callStatesIA =
+      callStates.filter(
+        (state) => {
+          const texto =
+            JSON.stringify(
+              state
+            ).toLowerCase();
+
+          return (
+            texto.includes(
+              "virtualreceptionist"
+            ) ||
+            texto.includes(
+              "virtual_receptionist"
+            ) ||
+            texto.includes(
+              "receptionist"
+            ) ||
+            texto.includes(
+              "scheduling"
+            ) ||
+            texto.includes(
+              "appointment"
+            ) ||
+            texto.includes(
+              "air_"
+            )
+          );
+        }
       );
 
-
-    // ==========================================================
-    // EXTRAI DATA
-    // ==========================================================
-
-    const data =
-      extrairData(
-        textos,
-        relatorio?.callCreated
-      );
-
-
-    // ==========================================================
-    // TELEFONE
-    // ==========================================================
-
-    const telefone =
-      obterTelefone(
-        relatorio
-      );
-
-
-    // ==========================================================
-    // RESULTADO DA EXTRAÇÃO
-    // ==========================================================
 
     console.log(
-      "DADOS EXTRAÍDOS:",
-      JSON.stringify(
-        {
-          data,
-          horario,
-          telefone,
+      "===== CALL STATES IA RECEPCIONISTA ====="
+    );
 
-          callReason:
-            relatorio
-              ?.callReason ||
-            null
-        },
+    console.log(
+      JSON.stringify(
+        callStatesIA,
         null,
         2
       )
@@ -1290,63 +957,174 @@ async function processarChamada(
 
 
     // ==========================================================
-    // SEGURANÇA
+    // PARTICIPANTS
     // ==========================================================
 
-    if (
-      !data ||
-      !horario
-    ) {
-      console.log(
-        "AGENDAMENTO NÃO CRIADO: data ou horário não identificado."
-      );
-
-      console.log(
-        "Precisamos analisar INFO_CAPTURE COMPLETO acima."
-      );
-
-      return;
-    }
-
-
-    // ==========================================================
-    // CRIA AGENDAMENTO
-    // ==========================================================
-
-    const resultado =
-      await criarAgendamento({
-        data,
-        horario,
-        telefone,
-        conversationSpaceId
-      });
+    const participants =
+      Array.isArray(
+        relatorio?.participants
+      )
+        ? relatorio.participants
+        : [];
 
 
     console.log(
-      "RESULTADO AGENDAMENTO:",
+      "===== PARTICIPANTS COMPLETOS ====="
+    );
+
+    console.log(
       JSON.stringify(
-        resultado,
+        participants,
         null,
         2
       )
     );
 
 
-    if (
-      resultado.ok
-    ) {
-      console.log(
-        "AGENDAMENTO PROCESSADO COM SUCESSO."
+    // ==========================================================
+    // TRANSCRIPTS
+    // ==========================================================
+
+    const transcripts = [];
+
+    participants.forEach(
+      (participant, index) => {
+        if (
+          participant?.transcripts
+        ) {
+          transcripts.push({
+            participant:
+              index,
+
+            transcripts:
+              participant.transcripts
+          });
+        }
+
+
+        if (
+          participant?.liveTranscripts
+        ) {
+          transcripts.push({
+            participant:
+              index,
+
+            liveTranscripts:
+              participant.liveTranscripts
+          });
+        }
+
+
+        if (
+          participant?.recordings
+        ) {
+          transcripts.push({
+            participant:
+              index,
+
+            recordings:
+              participant.recordings
+          });
+        }
+      }
+    );
+
+
+    console.log(
+      "===== TRANSCRIPTS / RECORDINGS ====="
+    );
+
+    console.log(
+      JSON.stringify(
+        transcripts,
+        null,
+        2
+      )
+    );
+
+
+    // ==========================================================
+    // BUSCA RECURSIVA
+    // ==========================================================
+
+    const encontrados =
+      removerDuplicados(
+        procurarDadosInteressantes(
+          relatorio
+        )
       );
-    } else {
-      console.log(
-        "API /agendar retornou erro."
+
+
+    console.log(
+      "===== CAMPOS INTERESSANTES ENCONTRADOS ====="
+    );
+
+    console.log(
+      JSON.stringify(
+        encontrados,
+        null,
+        2
+      )
+    );
+
+
+    // ==========================================================
+    // POSSÍVEIS HORÁRIOS
+    // ==========================================================
+
+    const possiveisHorarios =
+      removerDuplicados(
+        procurarPossiveisHorarios(
+          relatorio
+        )
       );
-    }
+
+
+    console.log(
+      "===== POSSÍVEIS HORÁRIOS ENCONTRADOS ====="
+    );
+
+    console.log(
+      JSON.stringify(
+        possiveisHorarios,
+        null,
+        2
+      )
+    );
+
+
+    // ==========================================================
+    // REPORT COMPLETO
+    // ==========================================================
+
+    console.log(
+      "===== REPORT COMPLETO ====="
+    );
+
+    console.log(
+      JSON.stringify(
+        relatorio,
+        null,
+        2
+      )
+    );
+
+
+    // ==========================================================
+    // IMPORTANTE
+    // ==========================================================
+
+    console.log(
+      "===== MODO DIAGNÓSTICO ====="
+    );
+
+    console.log(
+      "Nenhum agendamento foi criado nesta execução."
+    );
 
   } catch (error) {
     console.error(
-      "ERRO NO PROCESSAMENTO BACKGROUND:",
+      "ERRO NO DIAGNÓSTICO:",
       error
     );
 
@@ -1356,14 +1134,14 @@ async function processarChamada(
     );
 
     console.log(
-      "========== FIM PROCESSAMENTO BACKGROUND =========="
+      "===== FIM DIAGNÓSTICO GOTO ====="
     );
   }
 }
 
 
 // ============================================================
-// HANDLER DO WEBHOOK
+// WEBHOOK
 // ============================================================
 
 module.exports =
@@ -1372,9 +1150,9 @@ module.exports =
     res
   ) {
     try {
-      // ========================================================
+      // --------------------------------------------------------
       // OPTIONS
-      // ========================================================
+      // --------------------------------------------------------
 
       if (
         req.method ===
@@ -1401,9 +1179,9 @@ module.exports =
       }
 
 
-      // ========================================================
-      // GET TESTE
-      // ========================================================
+      // --------------------------------------------------------
+      // GET
+      // --------------------------------------------------------
 
       if (
         req.method ===
@@ -1418,21 +1196,21 @@ module.exports =
             message:
               "Webhook GoTo ativo",
 
-            automation:
-              "Agendamento automático em background habilitado",
-
-            diagnostic:
-              "INFO_CAPTURE completo habilitado",
+            mode:
+              "diagnostico-avancado",
 
             background:
-              true
+              true,
+
+            scheduling:
+              false
           });
       }
 
 
-      // ========================================================
+      // --------------------------------------------------------
       // SOMENTE POST
-      // ========================================================
+      // --------------------------------------------------------
 
       if (
         req.method !==
@@ -1454,9 +1232,9 @@ module.exports =
         req.body;
 
 
-      // ========================================================
+      // --------------------------------------------------------
       // VALIDATION CODE
-      // ========================================================
+      // --------------------------------------------------------
 
       const validationCode =
         Array.isArray(
@@ -1484,9 +1262,9 @@ module.exports =
       }
 
 
-      // ========================================================
+      // --------------------------------------------------------
       // POST VAZIO
-      // ========================================================
+      // --------------------------------------------------------
 
       if (
         !payload ||
@@ -1509,9 +1287,9 @@ module.exports =
       }
 
 
-      // ========================================================
+      // --------------------------------------------------------
       // NORMALIZA EVENTO
-      // ========================================================
+      // --------------------------------------------------------
 
       const evento =
         Array.isArray(
@@ -1527,11 +1305,13 @@ module.exports =
 
 
       const metadata =
-        content?.metadata || {};
+        content?.metadata ||
+        {};
 
 
       const state =
-        content?.state || {};
+        content?.state ||
+        {};
 
 
       const conversationSpaceId =
@@ -1544,14 +1324,10 @@ module.exports =
           ?.accountKey;
 
 
-      // ========================================================
-      // LOG RESUMIDO
-      // ========================================================
-
       console.log(
         "GOTO EVENT:",
         JSON.stringify({
-          id:
+          eventId:
             evento?.id ||
             null,
 
@@ -1570,9 +1346,9 @@ module.exports =
       );
 
 
-      // ========================================================
-      // SOMENTE CONTA DEMO
-      // ========================================================
+      // --------------------------------------------------------
+      // CONTA DEMO
+      // --------------------------------------------------------
 
       if (
         accountKey &&
@@ -1594,9 +1370,9 @@ module.exports =
       }
 
 
-      // ========================================================
+      // --------------------------------------------------------
       // SOMENTE ENDING
-      // ========================================================
+      // --------------------------------------------------------
 
       if (
         state?.type !==
@@ -1621,9 +1397,9 @@ module.exports =
       }
 
 
-      // ========================================================
-      // SEM CONVERSATION ID
-      // ========================================================
+      // --------------------------------------------------------
+      // SEM ID
+      // --------------------------------------------------------
 
       if (
         !conversationSpaceId
@@ -1646,12 +1422,12 @@ module.exports =
       }
 
 
-      // ========================================================
-      // PROCESSAMENTO BACKGROUND
-      // ========================================================
+      // --------------------------------------------------------
+      // DIAGNÓSTICO EM BACKGROUND
+      // --------------------------------------------------------
 
       console.log(
-        "Disparando processamento background:",
+        "Disparando diagnóstico:",
         conversationSpaceId
       );
 
@@ -1663,9 +1439,9 @@ module.exports =
       );
 
 
-      // ========================================================
-      // RESPONDE IMEDIATAMENTE
-      // ========================================================
+      // --------------------------------------------------------
+      // RESPONDE AO GOTO IMEDIATAMENTE
+      // --------------------------------------------------------
 
       return res
         .status(200)
@@ -1674,6 +1450,9 @@ module.exports =
             true,
 
           received:
+            true,
+
+          diagnostic:
             true,
 
           background:
