@@ -2100,6 +2100,79 @@ async function processarChamada(
       return;
     }
 
+    // ==========================================================
+    // DIAGNÓSTICO TEMPORÁRIO
+    // ==========================================================
+    const relatorioSanitizado = JSON.parse(JSON.stringify(relatorio));
+    
+    const sanitizarObj = (obj) => {
+      for (const key in obj) {
+        if (typeof obj[key] === 'object' && obj[key] !== null) {
+          sanitizarObj(obj[key]);
+        } else if (typeof obj[key] === 'string') {
+          const lKey = key.toLowerCase();
+          if (lKey.includes('token') || lKey.includes('secret') || lKey.includes('key')) {
+            obj[key] = '*** REDACTED ***';
+          }
+        }
+      }
+    };
+    sanitizarObj(relatorioSanitizado);
+
+    console.log(
+      "===== CALL EVENTS REPORT COMPLETO =====",
+      JSON.stringify(relatorioSanitizado, null, 2)
+    );
+
+    const targetKeys = [
+      "nome_cliente", "cpf_cliente", "data_escolhida", "horario_escolhido",
+      "nome", "cpf", "data", "horario"
+    ];
+
+    const foundPaths = {};
+    targetKeys.forEach(k => foundPaths[k] = []);
+
+    function searchPaths(obj, currentPath) {
+      if (!obj) return;
+      if (typeof obj === 'object') {
+        for (const [k, v] of Object.entries(obj)) {
+          const newPath = currentPath ? `${currentPath}.${k}` : k;
+          
+          targetKeys.forEach(target => {
+            if (k.toLowerCase().includes(target)) {
+              foundPaths[target].push(`${newPath} (CHAVE)`);
+            }
+          });
+
+          if (typeof v === 'string') {
+            const vLower = v.toLowerCase();
+            targetKeys.forEach(target => {
+              if (vLower.includes(target)) {
+                foundPaths[target].push(`${newPath} = "${v}"`);
+              }
+            });
+          }
+
+          if (typeof v === 'object' && v !== null) {
+            searchPaths(v, newPath);
+          }
+        }
+      }
+    }
+
+    searchPaths(relatorio, "relatorio");
+
+    console.log("===== BUSCA DE CAMPOS CAPTURADOS =====");
+    targetKeys.forEach(target => {
+      console.log(`\n${target}:`);
+      if (foundPaths[target].length > 0) {
+        foundPaths[target].forEach(p => console.log(p));
+      } else {
+        console.log(`Nenhuma ocorrência encontrada para ${target}`);
+      }
+    });
+    // ==========================================================
+
 
     const callReason =
       obterCallReasonIA(
