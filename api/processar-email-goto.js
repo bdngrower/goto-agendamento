@@ -185,11 +185,16 @@ module.exports = async function handler(req, res) {
     }
 
     let operacao = "DESCONHECIDO";
-    const subject = (gotoMsg.subject || "").toLowerCase().trim();
-    if (subject.includes("agendamento microsoft 365")) {
-      operacao = "AGENDAR";
-    } else if (subject.includes("cancelamento microsoft 365")) {
+    let subject = String(gotoMsg.subject || "").trim();
+    // Remover acentos e espaços duplicados, e transformar em lowercase
+    subject = subject.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ");
+
+    if (subject.includes("cancelamento")) {
       operacao = "CANCELAR";
+    } else if (subject.includes("reagendamento")) {
+      operacao = "REAGENDAR";
+    } else if (subject.includes("agendamento")) {
+      operacao = "AGENDAR";
     }
 
     console.log(`TIPO DE OPERACAO: ${operacao}`);
