@@ -4,7 +4,7 @@ module.exports = async function handler(req, res) {
     const clientId = process.env.AZURE_CLIENT_ID;
     const clientSecret = process.env.AZURE_CLIENT_SECRET;
 
-    const mailbox = "agenda@criszimmgmail.onmicrosoft.com";
+    const mailbox = "2a2b2ab2-20cc-48b6-8846-2f633bd3cb7c";
 
     if (!tenantId || !clientId || !clientSecret) {
       return res.status(500).json({
