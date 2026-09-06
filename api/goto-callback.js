@@ -23,7 +23,7 @@ module.exports = async function handler(req, res) {
     if (!clientId || !clientSecret) {
       return res.status(500).json({
         success: false,
-        error: "GOTO_CLIENT_ID ou GOTO_CLIENT_SECRET não configurado"
+        error: "Credenciais GoTo não configuradas"
       });
     }
 
@@ -62,13 +62,12 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    /*
-     * TEMPORÁRIO PARA NOSSO TESTE.
-     *
-     * Não vamos exibir o access_token nem refresh_token no navegador.
-     * Neste primeiro teste só queremos confirmar que a autenticação
-     * funcionou e descobrir os dados da conta.
-     */
+    const secure = "Secure; HttpOnly; SameSite=Lax; Path=/";
+
+    res.setHeader("Set-Cookie", [
+      `goto_access_token=${encodeURIComponent(tokenData.access_token)}; Max-Age=${tokenData.expires_in || 3600}; ${secure}`,
+      `goto_refresh_token=${encodeURIComponent(tokenData.refresh_token)}; Max-Age=2592000; ${secure}`
+    ]);
 
     return res.status(200).json({
       success: true,
@@ -76,8 +75,7 @@ module.exports = async function handler(req, res) {
       principal: tokenData.principal,
       scope: tokenData.scope,
       expires_in: tokenData.expires_in,
-      token_type: tokenData.token_type,
-      next: "/api/goto-events"
+      next: "/api/goto-account"
     });
 
   } catch (error) {
