@@ -14,11 +14,8 @@ const FORMULARIO_AGENDAMENTO =
 const URL_BASE =
   "https://goto-agendamento.vercel.app";
 
-const URL_AGENDAR =
-  `${URL_BASE}/api/agendar`;
-
-const URL_CANCELAR =
-  `${URL_BASE}/api/cancelar`;
+const URL_AGENDAMENTO =
+  `${URL_BASE}/api/agendamento`;
 
 const TIMEZONE =
   "America/Sao_Paulo";
@@ -433,14 +430,6 @@ async function obterRelatorioCompleto(
     );
 
 
-    /*
-     * Para nossa automação, o callReason é a peça
-     * principal para descobrir a intenção.
-     *
-     * O INFO_CAPTURE continua sendo útil para
-     * confirmar que passou pelo fluxo configurado.
-     */
-
     if (callReason) {
       console.log(
         "Call Events Report pronto para processamento."
@@ -485,8 +474,7 @@ function identificarIntencao(
 
   // ----------------------------------------------------------
   // REAGENDAMENTO
-  // Fica preparado, mas ainda não executamos.
-  // Tem prioridade porque "reagendamento" contém "agendamento".
+  // Tem prioridade porque pode conter "agendamento".
   // ----------------------------------------------------------
 
   const palavrasReagendamento = [
@@ -857,6 +845,68 @@ function dataLocalISO(
 
 
 // ============================================================
+// MONTA DATA ISO
+// ============================================================
+
+function montarDataISO(
+  ano,
+  mes,
+  dia
+) {
+  return (
+    `${ano}-` +
+    `${String(
+      mes
+    ).padStart(
+      2,
+      "0"
+    )}-` +
+    `${String(
+      dia
+    ).padStart(
+      2,
+      "0"
+    )}`
+  );
+}
+
+
+// ============================================================
+// VALIDA DATA REAL
+// ============================================================
+
+function dataExiste(
+  ano,
+  mes,
+  dia
+) {
+  const data =
+    new Date(
+      Date.UTC(
+        ano,
+        mes - 1,
+        dia,
+        12,
+        0,
+        0
+      )
+    );
+
+
+  return (
+    data.getUTCFullYear() ===
+      ano &&
+
+    data.getUTCMonth() ===
+      mes - 1 &&
+
+    data.getUTCDate() ===
+      dia
+  );
+}
+
+
+// ============================================================
 // EXTRAI DATA
 // ============================================================
 
@@ -878,6 +928,59 @@ function extrairData(
     ).toLowerCase();
 
 
+  const textoNormalizado =
+    normalizarTexto(
+      texto
+    );
+
+
+  const meses = {
+    janeiro: 1,
+    fevereiro: 2,
+    marco: 3,
+    abril: 4,
+    maio: 5,
+    junho: 6,
+    julho: 7,
+    agosto: 8,
+    setembro: 9,
+    outubro: 10,
+    novembro: 11,
+    dezembro: 12
+  };
+
+
+  // ----------------------------------------------------------
+  // DATA BASE DA CHAMADA NO FUSO DE SÃO PAULO
+  // ----------------------------------------------------------
+
+  const criada =
+    new Date(
+      callCreated
+    );
+
+
+  const dataLocal =
+    dataLocalISO(
+      criada
+    );
+
+
+  const [
+    anoAtual,
+    mesAtual,
+    diaAtual
+  ] =
+    dataLocal
+      .split("-")
+      .map(Number);
+
+
+  // ==========================================================
+  // 8 DE SETEMBRO DE 2026
+  // DIA 8 DE SETEMBRO DE 2026
+  // ==========================================================
+
   let match =
     texto.match(
       /(?:dia\s+)?(\d{1,2})\s+de\s+([a-záéíóúâêôãõç]+)\s+de\s+(\d{4})/
@@ -897,22 +1000,6 @@ function extrairData(
       );
 
 
-    const meses = {
-      janeiro: 1,
-      fevereiro: 2,
-      marco: 3,
-      abril: 4,
-      maio: 5,
-      junho: 6,
-      julho: 7,
-      agosto: 8,
-      setembro: 9,
-      outubro: 10,
-      novembro: 11,
-      dezembro: 12
-    };
-
-
     const mes =
       meses[
         nomeMes
@@ -925,65 +1012,140 @@ function extrairData(
       );
 
 
-    if (mes) {
-      return (
-        `${ano}-` +
-        `${String(
-          mes
-        ).padStart(
-          2,
-          "0"
-        )}-` +
-        `${String(
-          dia
-        ).padStart(
-          2,
-          "0"
-        )}`
+    if (
+      mes &&
+      dataExiste(
+        ano,
+        mes,
+        dia
+      )
+    ) {
+      return montarDataISO(
+        ano,
+        mes,
+        dia
       );
     }
   }
 
 
-  const criada =
-    new Date(
-      callCreated
+  // ==========================================================
+  // 8 DE SETEMBRO
+  // DIA 8 DE SETEMBRO
+  //
+  // Se a data já tiver passado neste ano,
+  // assume o próximo ano.
+  // ==========================================================
+
+  match =
+    texto.match(
+      /(?:dia\s+)?(\d{1,2})\s+de\s+([a-záéíóúâêôãõç]+)(?!\s+de\s+\d{4})/
     );
 
 
-  const dataLocal =
-    dataLocalISO(
-      criada
-    );
+  if (match) {
+    const dia =
+      Number(
+        match[1]
+      );
 
 
-  const [
-    ano,
-    mes,
-    dia
-  ] =
-    dataLocal
-      .split("-")
-      .map(Number);
+    const nomeMes =
+      normalizarTexto(
+        match[2]
+      );
 
 
-  // ----------------------------------------------------------
+    const mes =
+      meses[
+        nomeMes
+      ];
+
+
+    if (mes) {
+      let ano =
+        anoAtual;
+
+
+      if (
+        !dataExiste(
+          ano,
+          mes,
+          dia
+        )
+      ) {
+        return null;
+      }
+
+
+      const dataInformada =
+        new Date(
+          Date.UTC(
+            ano,
+            mes - 1,
+            dia,
+            12,
+            0,
+            0
+          )
+        );
+
+
+      const dataChamada =
+        new Date(
+          Date.UTC(
+            anoAtual,
+            mesAtual - 1,
+            diaAtual,
+            12,
+            0,
+            0
+          )
+        );
+
+
+      // Se já passou, interpreta como próximo ano.
+      if (
+        dataInformada <
+        dataChamada
+      ) {
+        ano =
+          anoAtual + 1;
+      }
+
+
+      if (
+        dataExiste(
+          ano,
+          mes,
+          dia
+        )
+      ) {
+        return montarDataISO(
+          ano,
+          mes,
+          dia
+        );
+      }
+    }
+  }
+
+
+  // ==========================================================
   // AMANHÃ
-  // ----------------------------------------------------------
+  // ==========================================================
 
   if (
-    normalizarTexto(
-      texto
-    ).includes(
+    textoNormalizado.includes(
       "amanha"
     )
   ) {
     const base =
       new Date(
         Date.UTC(
-          ano,
-          mes - 1,
-          dia,
+          anoAtual,
+          mesAtual - 1,
+          diaAtual,
           12,
           0,
           0
@@ -996,36 +1158,205 @@ function extrairData(
     );
 
 
-    return (
-      `${base.getUTCFullYear()}-` +
-      `${String(
-        base.getUTCMonth() + 1
-      ).padStart(
-        2,
-        "0"
-      )}-` +
-      `${String(
-        base.getUTCDate()
-      ).padStart(
-        2,
-        "0"
-      )}`
+    return montarDataISO(
+      base.getUTCFullYear(),
+      base.getUTCMonth() + 1,
+      base.getUTCDate()
     );
   }
 
 
-  // ----------------------------------------------------------
-  // HOJE
-  // ----------------------------------------------------------
+  // ==========================================================
+  // DEPOIS DE AMANHÃ
+  // ==========================================================
 
   if (
-    normalizarTexto(
-      texto
-    ).includes(
+    textoNormalizado.includes(
+      "depois de amanha"
+    )
+  ) {
+    const base =
+      new Date(
+        Date.UTC(
+          anoAtual,
+          mesAtual - 1,
+          diaAtual,
+          12,
+          0,
+          0
+        )
+      );
+
+
+    base.setUTCDate(
+      base.getUTCDate() + 2
+    );
+
+
+    return montarDataISO(
+      base.getUTCFullYear(),
+      base.getUTCMonth() + 1,
+      base.getUTCDate()
+    );
+  }
+
+
+  // ==========================================================
+  // HOJE
+  // ==========================================================
+
+  if (
+    textoNormalizado.includes(
       "hoje"
     )
   ) {
     return dataLocal;
+  }
+
+
+  // ==========================================================
+  // DIAS DA SEMANA
+  //
+  // domingo = 0
+  // segunda = 1
+  // terça   = 2
+  // quarta  = 3
+  // quinta  = 4
+  // sexta   = 5
+  // sábado  = 6
+  // ==========================================================
+
+  const diasSemana = [
+    {
+      nomes: [
+        "domingo"
+      ],
+      numero: 0
+    },
+
+    {
+      nomes: [
+        "segunda",
+        "segunda-feira",
+        "segunda feira"
+      ],
+      numero: 1
+    },
+
+    {
+      nomes: [
+        "terca",
+        "terca-feira",
+        "terca feira"
+      ],
+      numero: 2
+    },
+
+    {
+      nomes: [
+        "quarta",
+        "quarta-feira",
+        "quarta feira"
+      ],
+      numero: 3
+    },
+
+    {
+      nomes: [
+        "quinta",
+        "quinta-feira",
+        "quinta feira"
+      ],
+      numero: 4
+    },
+
+    {
+      nomes: [
+        "sexta",
+        "sexta-feira",
+        "sexta feira"
+      ],
+      numero: 5
+    },
+
+    {
+      nomes: [
+        "sabado"
+      ],
+      numero: 6
+    }
+  ];
+
+
+  for (
+    const diaSemana
+    of diasSemana
+  ) {
+    const encontrado =
+      diaSemana.nomes.some(
+        (nome) =>
+          textoNormalizado.includes(
+            nome
+          )
+      );
+
+
+    if (!encontrado) {
+      continue;
+    }
+
+
+    const base =
+      new Date(
+        Date.UTC(
+          anoAtual,
+          mesAtual - 1,
+          diaAtual,
+          12,
+          0,
+          0
+        )
+      );
+
+
+    const atual =
+      base.getUTCDay();
+
+
+    let diferenca =
+      (
+        diaSemana.numero -
+        atual +
+        7
+      ) % 7;
+
+
+    /*
+     * Se alguém disser "quarta-feira"
+     * numa quarta, interpretamos como
+     * a próxima quarta.
+     *
+     * "hoje" já é tratado acima.
+     */
+
+    if (
+      diferenca === 0
+    ) {
+      diferenca = 7;
+    }
+
+
+    base.setUTCDate(
+      base.getUTCDate() +
+      diferenca
+    );
+
+
+    return montarDataISO(
+      base.getUTCFullYear(),
+      base.getUTCMonth() + 1,
+      base.getUTCDate()
+    );
   }
 
 
@@ -1116,11 +1447,10 @@ function obterTelefone(
 
 
 // ============================================================
-// CHAMA API INTERNA
+// CHAMA API UNIFICADA
 // ============================================================
 
-async function chamarApiInterna(
-  url,
+async function chamarApiAgendamento(
   body
 ) {
   const apiKey =
@@ -1136,7 +1466,7 @@ async function chamarApiInterna(
 
   const response =
     await fetch(
-      url,
+      URL_AGENDAMENTO,
       {
         method: "POST",
 
@@ -1327,20 +1657,20 @@ async function processarChamada(
 
 
       const resultado =
-        await chamarApiInterna(
-          URL_CANCELAR,
-          {
-            telefone,
+        await chamarApiAgendamento({
+          acao:
+            "cancelar",
 
-            conversationSpaceId,
+          telefone,
 
-            callReason
-          }
-        );
+          conversationSpaceId,
+
+          callReason
+        });
 
 
       console.log(
-        "RESULTADO /API/CANCELAR:",
+        "RESULTADO /API/AGENDAMENTO - CANCELAR:",
         JSON.stringify(
           resultado,
           null,
@@ -1375,12 +1705,33 @@ async function processarChamada(
       "REAGENDAR"
     ) {
       console.log(
-        "Fluxo de REAGENDAMENTO identificado."
+        "Fluxo escolhido: REAGENDAMENTO"
       );
 
+
+      /*
+       * IMPORTANTE:
+       *
+       * O endpoint /api/agendamento já possui
+       * a ação "reagendar".
+       *
+       * Porém não vamos executar automaticamente
+       * aqui porque ainda precisamos:
+       *
+       * 1. localizar qual compromisso;
+       * 2. confirmar com o cliente;
+       * 3. receber a nova data;
+       * 4. receber o novo horário.
+       *
+       * Isso será feito através da Custom Connection
+       * durante a própria chamada.
+       */
+
+
       console.log(
-        "Reagendamento ainda não implementado no backend."
+        "Reagendamento aguardando fluxo interativo da Custom Connection."
       );
+
 
       return;
     }
@@ -1444,32 +1795,32 @@ async function processarChamada(
 
 
       const resultado =
-        await chamarApiInterna(
-          URL_AGENDAR,
-          {
-            data,
+        await chamarApiAgendamento({
+          acao:
+            "agendar",
 
-            horario,
+          data,
 
-            nome:
-              telefone
-                ? `Telefone ${telefone}`
-                : "Cliente GoTo",
+          horario,
 
-            telefone,
+          nome:
+            telefone
+              ? `Telefone ${telefone}`
+              : "Cliente GoTo",
 
-            conversationSpaceId,
+          telefone,
 
-            origem:
-              "GoTo IA Recepcionista",
+          conversationSpaceId,
 
-            callReason
-          }
-        );
+          origem:
+            "GoTo IA Recepcionista",
+
+          callReason
+        });
 
 
       console.log(
-        "RESULTADO /API/AGENDAR:",
+        "RESULTADO /API/AGENDAMENTO - AGENDAR:",
         JSON.stringify(
           resultado,
           null,
@@ -1586,8 +1937,11 @@ module.exports =
             message:
               "Webhook GoTo ativo",
 
+            api:
+              "/api/agendamento",
+
             mode:
-              "agendar-cancelar",
+              "api-unificada",
 
             background:
               true,
@@ -1599,7 +1953,7 @@ module.exports =
               true,
 
             reagendamento:
-              false
+              "aguardando fluxo interativo"
           });
       }
 
