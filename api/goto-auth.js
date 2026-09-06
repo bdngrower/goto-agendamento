@@ -12,8 +12,9 @@ module.exports = async function handler(req, res) {
     "https://goto-agendamento.vercel.app/api/goto-callback";
 
   const scopes = [
+    "call-events.v1.notifications.manage",
     "call-events.v1.events.read",
-    "call-events.v1.notifications.manage"
+    "cr.v1.read"
   ].join(" ");
 
   const authUrl =
