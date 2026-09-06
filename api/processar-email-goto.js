@@ -80,11 +80,14 @@ async function consultarCalendarView({ accessToken, inicio, fim, select = "id,su
   return Array.isArray(resultado.data?.value) ? resultado.data.value : [];
 }
 
-async function verificarIntervaloLivre({ accessToken, data, horario, duracaoMinutos = DURACAO_MINUTOS }) {
+async function verificarIntervaloLivre({ accessToken, data, horario, duracaoMinutos = DURACAO_MINUTOS, ignoreEventId = null }) {
   const fimCalculado = somarMinutosLocal(data, horario, duracaoMinutos);
   const inicioConsulta = `${data}T${horario}:00${OFFSET}`;
   const fimConsulta = `${fimCalculado.data}T${fimCalculado.horario}:00${OFFSET}`;
-  const eventos = await consultarCalendarView({ accessToken, inicio: inicioConsulta, fim: fimConsulta });
+  let eventos = await consultarCalendarView({ accessToken, inicio: inicioConsulta, fim: fimConsulta });
+  if (ignoreEventId) {
+    eventos = eventos.filter(e => e.id !== ignoreEventId);
+  }
   return { livre: eventos.length === 0, conflitos: eventos, fim: fimCalculado };
 }
 
@@ -95,14 +98,16 @@ function decodeHtmlEntities(text) {
 
 const CAMPOS_MAPEAMENTO = {
   cpf: ["cpf_cliente"],
-  data: ["data_escolhida", "data_agendamento"],
+  data: ["data_escolhida", "data_agendamento", "data_agendamento_atual"],
   nome: ["nome_cliente"],
-  horario: ["horario_escolhido", "horario_agendamento"],
-  telefone: ["número de telefone", "numero de telefone"]
+  horario: ["horario_escolhido", "horario_agendamento", "horario_agendamento_atual"],
+  telefone: ["número de telefone", "numero de telefone"],
+  nova_data: ["nova_data"],
+  novo_horario: ["novo_horario"]
 };
 
 function parseEmailHtml(htmlString) {
-  const dados = { nome: null, cpf: null, telefone: null, data: null, horario: null };
+  const dados = { nome: null, cpf: null, telefone: null, data: null, horario: null, nova_data: null, novo_horario: null };
   if (!htmlString) return dados;
   const trRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
   const tdRegex = /<td[^>]*>([\s\S]*?)<\/td>/gi;
@@ -121,7 +126,9 @@ function parseEmailHtml(htmlString) {
       const key = tds[0].toLowerCase();
       let val = tds[1].trim();
       
-      if (CAMPOS_MAPEAMENTO.horario.some(k => key.includes(k))) dados.horario = val;
+      if (CAMPOS_MAPEAMENTO.novo_horario.some(k => key.includes(k))) dados.novo_horario = val;
+      else if (CAMPOS_MAPEAMENTO.nova_data.some(k => key.includes(k))) dados.nova_data = val;
+      else if (CAMPOS_MAPEAMENTO.horario.some(k => key.includes(k))) dados.horario = val;
       else if (CAMPOS_MAPEAMENTO.nome.some(k => key.includes(k))) dados.nome = val;
       else if (CAMPOS_MAPEAMENTO.cpf.some(k => key.includes(k))) dados.cpf = val;
       else if (CAMPOS_MAPEAMENTO.data.some(k => key.includes(k))) dados.data = val;
@@ -138,6 +145,16 @@ function parseEmailHtml(htmlString) {
     const h = dados.horario.match(/(\d{2}:\d{2})/);
     if (h) dados.horario = h[1];
     else dados.horario = null;
+  }
+  if (dados.nova_data) {
+    const nd = dados.nova_data.match(/(\d{4}-\d{2}-\d{2})/);
+    if (nd) dados.nova_data = nd[1];
+    else dados.nova_data = null;
+  }
+  if (dados.novo_horario) {
+    const nh = dados.novo_horario.match(/(\d{2}:\d{2})/);
+    if (nh) dados.novo_horario = nh[1];
+    else dados.novo_horario = null;
   }
   return dados;
 }
@@ -526,6 +543,139 @@ module.exports = async function handler(req, res) {
         data: dadosExtraidos.data,
         horario: dadosExtraidos.horario,
         nomeInformado: dadosExtraidos.nome
+      });
+    } else if (operacao === "REAGENDAR") {
+      console.log("DADOS DE REAGENDAMENTO EXTRAIDOS");
+      const gotoCaptureId = crypto.createHash("sha256").update(gotoMsg.id).digest("hex");
+
+      // Idempotência
+      const searchUrl = `https://graph.microsoft.com/v1.0/users/${MAILBOX_ID}/events?$search="GoToCaptureId: ${gotoCaptureId}"`;
+      const searchResponse = await fetch(searchUrl, {
+        method: "GET",
+        headers: { "Authorization": `Bearer ${accessToken}`, "ConsistencyLevel": "eventual", "Content-Type": "application/json" }
+      });
+      if (searchResponse.ok) {
+        const searchData = await searchResponse.json();
+        if (searchData.value && searchData.value.length > 0) {
+          console.log("REAGENDAMENTO JA PROCESSADO");
+          return res.status(200).json({ success: true, processed: false, alreadyProcessed: true, operacao: "reagendar", message: "Este reagendamento GoTo já foi processado." });
+        }
+      }
+
+      if (!dadosExtraidos.cpf || !dadosExtraidos.telefone || !dadosExtraidos.data || !dadosExtraidos.nova_data || !dadosExtraidos.novo_horario) {
+         return res.status(200).json({
+           success: false, processed: false, reason: "dados_reagendamento_incompletos",
+           campos: { cpf: !!dadosExtraidos.cpf, telefone: !!dadosExtraidos.telefone, data: !!dadosExtraidos.data, nova_data: !!dadosExtraidos.nova_data, novo_horario: !!dadosExtraidos.novo_horario }
+         });
+      }
+
+      console.log("BUSCANDO AGENDAMENTO ORIGINAL PARA REAGENDAMENTO");
+
+      const cpfBuscado = String(dadosExtraidos.cpf).replace(/\D/g, "");
+      const telBuscado = String(dadosExtraidos.telefone).replace(/\D/g, "");
+
+      const inicioCheck = `${dadosExtraidos.data}T00:00:00${OFFSET}`;
+      const [ano, mes, dia] = dadosExtraidos.data.split("-").map(Number);
+      const dateObj = new Date(Date.UTC(ano, mes - 1, dia, 12, 0, 0));
+      dateObj.setUTCDate(dateObj.getUTCDate() + 1);
+      const nextDateStr = `${dateObj.getUTCFullYear()}-${String(dateObj.getUTCMonth() + 1).padStart(2, "0")}-${String(dateObj.getUTCDate()).padStart(2, "0")}`;
+      const fimCheck = `${nextDateStr}T00:00:00${OFFSET}`;
+
+      const eventosDia = await consultarCalendarView({ accessToken, inicio: inicioCheck, fim: fimCheck, select: "id,subject,body,bodyPreview,start,end,isAllDay,webLink" });
+
+      const candidatos = [];
+      for (const ev of eventosDia) {
+         const content = ev.body?.content || "";
+         const matchCpf = content.match(/CPF:\s*([^\n<]+)/i);
+         const matchTel = content.match(/Telefone:\s*([^\n<]+)/i);
+         
+         if (matchCpf && matchTel) {
+             const evCpf = matchCpf[1].replace(/\D/g, "");
+             const evTel = matchTel[1].replace(/\D/g, "");
+             if (evCpf === cpfBuscado && evTel === telBuscado) {
+                 candidatos.push(ev);
+             }
+         }
+      }
+
+      console.log(`CANDIDATOS ENCONTRADOS: ${candidatos.length}`);
+
+      let eventoAlvo = null;
+      if (candidatos.length === 1) {
+          if (dadosExtraidos.horario) {
+              const startDateTime = candidatos[0].start?.dateTime || "";
+              if (startDateTime.includes(`T${dadosExtraidos.horario}:00`)) eventoAlvo = candidatos[0];
+          } else {
+              eventoAlvo = candidatos[0];
+          }
+      } else if (candidatos.length > 1) {
+          if (dadosExtraidos.horario) {
+              const filtradosPorHorario = candidatos.filter(e => (e.start?.dateTime || "").includes(`T${dadosExtraidos.horario}:00`));
+              if (filtradosPorHorario.length === 1) eventoAlvo = filtradosPorHorario[0];
+          }
+          if (!eventoAlvo) {
+              console.log("AGENDAMENTO ORIGINAL AMBIGUO");
+              return res.status(200).json({ success: false, processed: false, operacao: "reagendar", reason: "agendamento_ambiguo", quantidade: candidatos.length });
+          }
+      }
+
+      if (!eventoAlvo) {
+          console.log("AGENDAMENTO ORIGINAL NAO ENCONTRADO");
+          return res.status(200).json({ success: false, processed: false, operacao: "reagendar", reason: "agendamento_nao_encontrado", data: dadosExtraidos.data, horario: dadosExtraidos.horario });
+      }
+
+      // Check against fallback idempotency
+      const alvoContent = eventoAlvo.body?.content || "";
+      if (alvoContent.includes(gotoCaptureId)) {
+          console.log("REAGENDAMENTO JA PROCESSADO (FALLBACK)");
+          return res.status(200).json({ success: true, processed: false, alreadyProcessed: true, operacao: "reagendar", message: "Este reagendamento GoTo já foi processado." });
+      }
+
+      console.log("VERIFICANDO DISPONIBILIDADE DO NOVO HORARIO");
+      const disponibilidade = await verificarIntervaloLivre({
+        accessToken, data: dadosExtraidos.nova_data, horario: dadosExtraidos.novo_horario, ignoreEventId: eventoAlvo.id
+      });
+
+      if (!disponibilidade.livre) {
+        return res.status(200).json({ success: false, processed: false, operacao: "reagendar", reason: "novo_horario_indisponivel", data: dadosExtraidos.nova_data, horario: dadosExtraidos.novo_horario });
+      }
+
+      console.log("FAZENDO PATCH NO EVENTO OUTLOOK");
+
+      const partesNovaData = dadosExtraidos.nova_data.split("-");
+      const novaDataExibicao = partesNovaData.length === 3 ? `${partesNovaData[2]}/${partesNovaData[1]}/${partesNovaData[0]}` : dadosExtraidos.nova_data;
+
+      // Update body content safely
+      let newContent = alvoContent;
+      // Atualizar data/horario textuais, usando regex robustas para match
+      newContent = newContent.replace(/(Data:)\s*[^\n<]+/i, `$1 ${novaDataExibicao}`);
+      newContent = newContent.replace(/(Horário:)\s*[^\n<]+/i, `$1 ${dadosExtraidos.novo_horario}`);
+      
+      // Anexar idempotência no final
+      newContent += `\r\nGoToCaptureId: ${gotoCaptureId}\r\nGoToMessageId: ${gotoMsg.id}`;
+
+      const patchPayload = {
+        body: { contentType: "Text", content: newContent },
+        start: { dateTime: `${dadosExtraidos.nova_data}T${dadosExtraidos.novo_horario}:00`, timeZone: GRAPH_TIMEZONE },
+        end: { dateTime: disponibilidade.fim.dateTime, timeZone: GRAPH_TIMEZONE }
+      };
+
+      const patchUrl = `https://graph.microsoft.com/v1.0/users/${MAILBOX_ID}/events/${eventoAlvo.id}`;
+      const patchResult = await graphRequest({ accessToken, url: patchUrl, method: "PATCH", body: patchPayload });
+      
+      if (!patchResult.ok) {
+          throw new Error(`Erro ao reagendar evento: ${JSON.stringify(patchResult.data)}`);
+      }
+      
+      console.log("EVENTO REAGENDADO COM SUCESSO");
+      
+      const cpfLength = cpfBuscado.length;
+      console.log(`Telefone envolvido processado. CPF final ***${cpfBuscado.substring(cpfLength - 2)}`);
+
+      return res.status(200).json({
+        success: true, processed: true, operacao: "reagendar", reagendado: true,
+        eventoId: eventoAlvo.id, dataAnterior: dadosExtraidos.data, horarioAnterior: dadosExtraidos.horario,
+        novaData: dadosExtraidos.nova_data, novoHorario: dadosExtraidos.novo_horario, nomeInformado: dadosExtraidos.nome
       });
     }
 
