@@ -2041,6 +2041,24 @@ async function processarChamada(
     }
 
 
+    console.log(
+      "===== ACTIONS COMPLETAS DO REPORT =====",
+      JSON.stringify(relatorio?.actions || [], null, 2)
+    );
+
+    const infoCaptureActions =
+      Array.isArray(relatorio?.actions)
+        ? relatorio.actions.filter(
+            action => action?.type?.value === "INFO_CAPTURE"
+          )
+        : [];
+
+    console.log(
+      "===== INFO_CAPTURE COMPLETO =====",
+      JSON.stringify(infoCaptureActions, null, 2)
+    );
+
+
     const callReason =
       obterCallReasonIA(
         relatorio
