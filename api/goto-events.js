@@ -54,7 +54,16 @@ async function obterAccessTokenGoTo() {
 
 
 // ============================================================
-// CONSULTA CALL EVENTS REPORT
+// ESPERA
+// ============================================================
+
+function esperar(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+
+// ============================================================
+// CONSULTA CALL EVENTS REPORT COM RETENTATIVA
 // ============================================================
 
 async function obterRelatorio(
@@ -65,31 +74,65 @@ async function obterRelatorio(
     "https://api.goto.com/call-events-report/v1/reports/" +
     encodeURIComponent(conversationSpaceId);
 
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Accept: "application/json"
+  const maxTentativas = 5;
+
+  for (
+    let tentativa = 1;
+    tentativa <= maxTentativas;
+    tentativa++
+  ) {
+    console.log(
+      `Consultando Call Events Report - tentativa ${tentativa}/${maxTentativas}`
+    );
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json"
+      }
+    });
+
+    const text = await response.text();
+
+    let data;
+
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
     }
-  });
 
-  const text = await response.text();
+    if (response.ok) {
+      console.log(
+        `Call Events Report disponível na tentativa ${tentativa}`
+      );
 
-  let data;
+      return data;
+    }
 
-  try {
-    data = JSON.parse(text);
-  } catch {
-    data = text;
-  }
+    // O evento ENDING pode chegar antes de o relatório
+    // pós-chamada estar completamente disponível.
+    if (
+      response.status === 404 &&
+      tentativa < maxTentativas
+    ) {
+      console.log(
+        `Relatório ainda não disponível. Aguardando 2 segundos antes da próxima tentativa...`
+      );
 
-  if (!response.ok) {
+      await esperar(2000);
+      continue;
+    }
+
     throw new Error(
       `Erro Call Events Report ${response.status}: ${JSON.stringify(data)}`
     );
   }
 
-  return data;
+  throw new Error(
+    "Call Events Report não ficou disponível após várias tentativas"
+  );
 }
 
 
@@ -345,6 +388,7 @@ function extrairData(textos, callCreated) {
     }
   }
 
+  // amanhã
   if (
     textos.some((texto) =>
       texto.toLowerCase().includes("amanhã")
@@ -370,6 +414,7 @@ function extrairData(textos, callCreated) {
     );
   }
 
+  // hoje
   if (
     textos.some((texto) =>
       texto.toLowerCase().includes("hoje")
@@ -600,9 +645,11 @@ module.exports = async function handler(req, res) {
       conversationSpaceId
     );
 
+    // Token GoTo
     const accessToken =
       await obterAccessTokenGoTo();
 
+    // Call Events Report
     const relatorio =
       await obterRelatorio(
         conversationSpaceId,
@@ -614,10 +661,15 @@ module.exports = async function handler(req, res) {
       relatorio?.callReason
     );
 
+    // Confirma INFO_CAPTURE
     const possuiCaptura =
       possuiCapturaAgendamento(relatorio);
 
     if (!possuiCaptura) {
+      console.log(
+        "Chamada não contém captura de agendamento."
+      );
+
       return res.status(200).json({
         success: true,
         received: true,
@@ -627,6 +679,7 @@ module.exports = async function handler(req, res) {
       });
     }
 
+    // Extrai dados
     const textos =
       obterTextosDaInteracao(relatorio);
 
@@ -657,6 +710,7 @@ module.exports = async function handler(req, res) {
       )
     );
 
+    // Não cria nada se não tiver certeza da data/hora
     if (!data || !horario) {
       return res.status(200).json({
         success: true,
@@ -671,6 +725,7 @@ module.exports = async function handler(req, res) {
       });
     }
 
+    // Cria agendamento
     const resultado =
       await criarAgendamento({
         data,
