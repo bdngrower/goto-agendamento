@@ -967,6 +967,15 @@ async function acaoAgendar({
     dados.callReason ||
     "";
 
+  console.log("===== API AGENDAMENTO =====");
+  console.log("AÇÃO: agendar");
+  console.log(`DATA: ${data}`);
+  console.log(`HORÁRIO: ${horario}`);
+  console.log(`NOME: ${nome}`);
+  console.log(`TELEFONE: ${telefone}`);
+  console.log(`CPF RECEBIDO: ${cpf ? "SIM" : "NÃO"}`);
+  console.log("\nConsultando disponibilidade...");
+
   if (!dataValida(data)) {
     return {
       status: 400,
@@ -999,6 +1008,7 @@ async function acaoAgendar({
     });
 
   if (!disponibilidade.livre) {
+    console.log("Horário indisponível.");
     return {
       status: 409,
 
@@ -1016,6 +1026,9 @@ async function acaoAgendar({
     };
   }
 
+  console.log("Horário disponível.");
+  console.log("Criando evento no Microsoft Graph...");
+
   const inicio =
     `${data}T${horario}:00`;
 
@@ -1024,30 +1037,33 @@ async function acaoAgendar({
       .fim
       .dateTime;
 
+  function formatarCpf(c) {
+    const cLimpo = c.replace(/\D/g, "");
+    if (cLimpo.length === 11) {
+      return cLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+    }
+    return c;
+  }
+  
+  const cpfFormatado = cpf ? formatarCpf(cpf) : "";
+
+  const partesData = data.split("-");
+  const dataExibicao = partesData.length === 3 ? `${partesData[2]}/${partesData[1]}/${partesData[0]}` : data;
+
   const descricao = [
     "Agendamento criado automaticamente pela integração GoTo.",
-
-    nome
-      ? `Nome: ${nome}`
-      : null,
-
-    cpf
-      ? `CPF: ${cpf}`
-      : null,
-
-    telefone
-      ? `Telefone: ${telefone}`
-      : null,
-
-    conversationSpaceId
-      ? `ConversationSpaceId: ${conversationSpaceId}`
-      : null,
-
-    callReason
-      ? `Motivo identificado pela IA: ${callReason}`
-      : null
+    "",
+    nome ? `Nome: ${nome}` : null,
+    cpfFormatado ? `CPF: ${cpfFormatado}` : null,
+    telefone ? `Telefone: ${telefone}` : null,
+    "",
+    `Data: ${dataExibicao}`,
+    `Horário: ${horario}`,
+    "Origem: GoTo IA Recepcionista",
+    conversationSpaceId ? `\nConversationSpaceId: ${conversationSpaceId}` : null,
+    callReason ? `Motivo identificado pela IA: ${callReason}` : null
   ]
-    .filter(Boolean)
+    .filter(item => item !== null)
     .join("\n");
 
   const evento = {
@@ -1110,6 +1126,12 @@ async function acaoAgendar({
       }
     };
   }
+
+  console.log("Evento criado com sucesso.");
+  console.log(`EVENTO ID: ${resultado.data?.id}`);
+  console.log(`DATA: ${data}`);
+  console.log(`HORÁRIO: ${horario}`);
+  console.log(`NOME: ${nome}`);
 
   return {
     status: 200,

@@ -2233,127 +2233,13 @@ async function processarChamada(
         "Fluxo escolhido: AGENDAMENTO"
       );
 
-      const dadosForm = extrairDadosFormulario(relatorio);
-      
       console.log(
-        "DADOS CAPTURADOS DO FORMULÁRIO:\n",
-        JSON.stringify(dadosForm, null, 2)
+        "Agendamento é executado em tempo real pela Custom Connection."
       );
 
-      const horario =
-        dadosForm.horario ||
-        extrairHorario(
-          callReason
-        );
-
-
-      const data =
-        dadosForm.data ||
-        extrairData(
-          callReason,
-          relatorio?.callCreated
-        );
-
-      const nomeFinal =
-        dadosForm.nome ||
-        (telefone
-          ? `Telefone ${telefone}`
-          : "Cliente GoTo");
-          
-      const cpfFinal = dadosForm.cpf || "";
-
       console.log(
-        "DADOS FINAIS DO AGENDAMENTO:\n",
-        JSON.stringify(
-          {
-            nome: nomeFinal,
-            cpf: cpfFinal,
-            telefone,
-            data,
-            horario,
-            callReason
-          },
-          null,
-          2
-        )
+        "Nenhuma criação pós-chamada será executada."
       );
-
-
-      if (
-        !data ||
-        !horario
-      ) {
-        console.log(
-          "AGENDAMENTO NÃO CRIADO."
-        );
-
-        console.log(
-          "Motivo: data ou horário não identificado."
-        );
-
-        return;
-      }
-
-      const payloadAgendamento = {
-        acao:
-          "agendar",
-
-        data,
-
-        horario,
-
-        nome:
-          nomeFinal,
-
-        telefone,
-
-        conversationSpaceId,
-
-        origem:
-          "GoTo IA Recepcionista",
-
-        callReason
-      };
-      
-      if (cpfFinal) {
-        payloadAgendamento.cpf = cpfFinal;
-      }
-
-      console.log(
-        "CHAMANDO /API/AGENDAMENTO:\n",
-        JSON.stringify(
-          payloadAgendamento,
-          null,
-          2
-        )
-      );
-
-      const resultado =
-        await chamarApiAgendamento(payloadAgendamento);
-
-
-      console.log(
-        "RESPOSTA /API/AGENDAMENTO:\n",
-        JSON.stringify(
-          resultado,
-          null,
-          2
-        )
-      );
-
-
-      if (
-        resultado.ok
-      ) {
-        console.log(
-          "===== AGENDAMENTO PROCESSADO COM SUCESSO ====="
-        );
-      } else {
-        console.log(
-          "===== AGENDAMENTO NÃO CONCLUÍDO ====="
-        );
-      }
-
 
       return;
     }
