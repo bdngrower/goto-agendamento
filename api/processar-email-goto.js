@@ -237,8 +237,21 @@ module.exports = async function handler(req, res) {
     const nextDateStr = `${dateObj.getUTCFullYear()}-${String(dateObj.getUTCMonth() + 1).padStart(2, "0")}-${String(dateObj.getUTCDate()).padStart(2, "0")}`;
     const fimCheck = `${nextDateStr}T00:00:00${OFFSET}`;
     
-    const fallbackEventos = await consultarCalendarView({ accessToken, inicio: inicioCheck, fim: fimCheck });
-    const jaExiste = fallbackEventos.find(e => e.bodyPreview && (e.bodyPreview.includes(gotoCaptureId) || e.bodyPreview.includes(gotoMsg.id)));
+    const fallbackEventos = await consultarCalendarView({ 
+      accessToken, 
+      inicio: inicioCheck, 
+      fim: fimCheck,
+      select: "id,subject,body,bodyPreview,start,end,isAllDay,webLink"
+    });
+    
+    const jaExiste = fallbackEventos.find(e => {
+      const conteudoCompleto = e.body?.content || "";
+      const preview = e.bodyPreview || "";
+      return conteudoCompleto.includes(gotoCaptureId) || 
+             preview.includes(gotoCaptureId) ||
+             conteudoCompleto.includes(gotoMsg.id) || 
+             preview.includes(gotoMsg.id);
+    });
     
     if (jaExiste) {
       console.log("CAPTURA JA PROCESSADA");
@@ -251,6 +264,7 @@ module.exports = async function handler(req, res) {
       });
     }
 
+    console.log("CAPTURA AINDA NAO PROCESSADA");
     console.log("VERIFICANDO DISPONIBILIDADE");
     const disponibilidade = await verificarIntervaloLivre({
       accessToken,
