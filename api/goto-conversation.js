@@ -1,7 +1,7 @@
 module.exports = async function handler(req, res) {
   try {
     // ============================================================
-    // 1. RECUPERA TOKEN OAUTH DO GOTO
+    // 1. TOKEN OAUTH GOTO
     // ============================================================
 
     const cookies = req.headers.cookie || "";
@@ -21,10 +21,10 @@ module.exports = async function handler(req, res) {
     // ============================================================
 
     const conversationSpaceId =
-      req.query.id || "0694093a-b82d-3815-8023-595ede98dad1";
+      req.query.id || "241899fc-3b66-3439-a720-70e7865930cb";
 
     // ============================================================
-    // 3. CONSULTA O CALL EVENTS REPORT
+    // 3. CALL EVENTS REPORT
     // ============================================================
 
     const url =
@@ -49,10 +49,6 @@ module.exports = async function handler(req, res) {
       data = text;
     }
 
-    // ============================================================
-    // 4. TRATAMENTO DE ERRO DA API GOTO
-    // ============================================================
-
     if (!response.ok) {
       return res.status(200).json({
         success: false,
@@ -63,25 +59,30 @@ module.exports = async function handler(req, res) {
     }
 
     // ============================================================
-    // 5. BUSCA RECURSIVA POR DADOS RELACIONADOS À IA/AGENDAMENTO
+    // 4. PROCURA RECURSIVA POR CAMPOS IMPORTANTES
     // ============================================================
 
     const encontrados = [];
 
-    const palavras = [
-      "air_",
-      "ai_insight",
+    const palavrasImportantes = [
+      "recording",
+      "recordings",
+      "recordingid",
+      "transcript",
+      "transcripts",
+      "transcriptid",
+      "livetranscript",
+      "livetranscripts",
+      "caption",
+      "captions",
+      "info_capture",
       "appointment",
       "scheduling",
-      "schedule",
       "agendamento",
       "horario",
       "horário",
-      "receptionist",
-      "virtualreceptionist",
-      "form",
-      "capture",
-      "captured"
+      "air_",
+      "ai_insight"
     ];
 
     function procurar(valor, caminho = "root") {
@@ -89,14 +90,14 @@ module.exports = async function handler(req, res) {
         return;
       }
 
-      // ----------------------------------------------------------
-      // STRING
-      // ----------------------------------------------------------
-
       if (typeof valor === "string") {
         const texto = valor.toLowerCase();
 
-        if (palavras.some((palavra) => texto.includes(palavra))) {
+        if (
+          palavrasImportantes.some((palavra) =>
+            texto.includes(palavra)
+          )
+        ) {
           encontrados.push({
             caminho,
             valor
@@ -106,10 +107,6 @@ module.exports = async function handler(req, res) {
         return;
       }
 
-      // ----------------------------------------------------------
-      // ARRAY
-      // ----------------------------------------------------------
-
       if (Array.isArray(valor)) {
         valor.forEach((item, index) => {
           procurar(item, `${caminho}[${index}]`);
@@ -118,16 +115,12 @@ module.exports = async function handler(req, res) {
         return;
       }
 
-      // ----------------------------------------------------------
-      // OBJETO
-      // ----------------------------------------------------------
-
       if (typeof valor === "object") {
         Object.entries(valor).forEach(([chave, conteudo]) => {
           const chaveLower = chave.toLowerCase();
 
           if (
-            palavras.some((palavra) =>
+            palavrasImportantes.some((palavra) =>
               chaveLower.includes(palavra)
             )
           ) {
@@ -145,21 +138,28 @@ module.exports = async function handler(req, res) {
     procurar(data);
 
     // ============================================================
-    // 6. PARTICIPANTES
+    // 5. PARTICIPANTES COMPLETOS COM DADOS DE GRAVAÇÃO
     // ============================================================
 
-    const participantes =
+    const participants =
       Array.isArray(data?.participants)
         ? data.participants.map((participant) => ({
             id: participant?.id || null,
             type: participant?.type || null,
+            status: participant?.status || null,
+
+            recordings: participant?.recordings || [],
+
             transcripts: participant?.transcripts || [],
-            liveTranscripts: participant?.liveTranscripts || []
+
+            liveTranscripts: participant?.liveTranscripts || [],
+
+            raw: participant
           }))
         : [];
 
     // ============================================================
-    // 7. RESPOSTA DE DIAGNÓSTICO
+    // 6. RESPOSTA
     // ============================================================
 
     return res.status(200).json({
@@ -173,26 +173,26 @@ module.exports = async function handler(req, res) {
         direction: data?.direction || null,
         accountKey: data?.accountKey || null,
         callReason: data?.callReason || null,
-        quantidadeEstados:
-          Array.isArray(data?.callStates)
-            ? data.callStates.length
-            : 0,
         quantidadeActions:
           Array.isArray(data?.actions)
             ? data.actions.length
+            : 0,
+        quantidadeParticipantes:
+          Array.isArray(data?.participants)
+            ? data.participants.length
             : 0
       },
 
-      // A parte mais importante agora:
       actions: data?.actions || [],
 
-      // Caso o relatório tenha transcrição global:
+      recordings: data?.recordings || [],
+
       transcripts: data?.transcripts || [],
 
-      // Caso a transcrição esteja associada aos participantes:
-      participants: participantes,
+      liveTranscripts: data?.liveTranscripts || [],
 
-      // Mantemos nossa busca anterior para não perder informação:
+      participants,
+
       encontrados
     });
 
