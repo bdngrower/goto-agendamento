@@ -305,6 +305,70 @@ function possuiCapturaAgendamento(
 
 
 // ============================================================
+// EXTRAI DADOS DO FORMULÁRIO (INFO_CAPTURE)
+// ============================================================
+
+function extrairDadosFormulario(relatorio) {
+  const dados = {
+    nome: "",
+    cpf: "",
+    data: "",
+    horario: ""
+  };
+
+  const actions = Array.isArray(relatorio?.actions) ? relatorio.actions : [];
+  
+  const actionForm = actions.find(
+    (action) =>
+      action?.type?.value === "INFO_CAPTURE" &&
+      action?.type?.form?.name === FORMULARIO_AGENDAMENTO
+  );
+
+  if (!actionForm) {
+    return dados;
+  }
+
+  const possiveisNomes = ["nome_cliente", "nome", "nome_completo"];
+  const possiveisCPFs = ["cpf_cliente", "cpf"];
+  const possiveisDatas = ["data_escolhida", "data"];
+  const possiveisHorarios = ["horario_escolhido", "horario"];
+  const chavesValor = ["value", "valor", "answer", "resposta", "text", "texto"];
+
+  function buscarValor(obj, chavesBuscadas) {
+    if (!obj || typeof obj !== "object") return null;
+
+    for (const [key, value] of Object.entries(obj)) {
+      if (chavesBuscadas.includes(key.toLowerCase())) {
+        if (typeof value === "string" || typeof value === "number") {
+          return String(value);
+        }
+        if (typeof value === "object" && value !== null) {
+          for (const kValor of chavesValor) {
+            if (value[kValor] !== undefined && value[kValor] !== null) {
+              return String(value[kValor]);
+            }
+          }
+        }
+      }
+      
+      if (typeof value === "object" && value !== null) {
+        const result = buscarValor(value, chavesBuscadas);
+        if (result) return result;
+      }
+    }
+    return null;
+  }
+
+  dados.nome = buscarValor(actionForm, possiveisNomes) || "";
+  dados.cpf = buscarValor(actionForm, possiveisCPFs) || "";
+  dados.data = buscarValor(actionForm, possiveisDatas) || "";
+  dados.horario = buscarValor(actionForm, possiveisHorarios) || "";
+
+  return dados;
+}
+
+
+// ============================================================
 // AGUARDA REPORT COMPLETO
 // ============================================================
 
@@ -2109,27 +2173,44 @@ async function processarChamada(
         "Fluxo escolhido: AGENDAMENTO"
       );
 
+      const dadosForm = extrairDadosFormulario(relatorio);
+      
+      console.log(
+        "DADOS CAPTURADOS DO FORMULÁRIO:\n",
+        JSON.stringify(dadosForm, null, 2)
+      );
 
       const horario =
+        dadosForm.horario ||
         extrairHorario(
           callReason
         );
 
 
       const data =
+        dadosForm.data ||
         extrairData(
           callReason,
           relatorio?.callCreated
         );
 
+      const nomeFinal =
+        dadosForm.nome ||
+        (telefone
+          ? `Telefone ${telefone}`
+          : "Cliente GoTo");
+          
+      const cpfFinal = dadosForm.cpf || "";
 
       console.log(
-        "DADOS EXTRAÍDOS:",
+        "DADOS FINAIS DO AGENDAMENTO:\n",
         JSON.stringify(
           {
+            nome: nomeFinal,
+            cpf: cpfFinal,
+            telefone,
             data,
             horario,
-            telefone,
             callReason
           },
           null,
@@ -2153,34 +2234,46 @@ async function processarChamada(
         return;
       }
 
+      const payloadAgendamento = {
+        acao:
+          "agendar",
+
+        data,
+
+        horario,
+
+        nome:
+          nomeFinal,
+
+        telefone,
+
+        conversationSpaceId,
+
+        origem:
+          "GoTo IA Recepcionista",
+
+        callReason
+      };
+      
+      if (cpfFinal) {
+        payloadAgendamento.cpf = cpfFinal;
+      }
+
+      console.log(
+        "CHAMANDO /API/AGENDAMENTO:\n",
+        JSON.stringify(
+          payloadAgendamento,
+          null,
+          2
+        )
+      );
 
       const resultado =
-        await chamarApiAgendamento({
-          acao:
-            "agendar",
-
-          data,
-
-          horario,
-
-          nome:
-            telefone
-              ? `Telefone ${telefone}`
-              : "Cliente GoTo",
-
-          telefone,
-
-          conversationSpaceId,
-
-          origem:
-            "GoTo IA Recepcionista",
-
-          callReason
-        });
+        await chamarApiAgendamento(payloadAgendamento);
 
 
       console.log(
-        "RESULTADO /API/AGENDAMENTO - AGENDAR:",
+        "RESPOSTA /API/AGENDAMENTO:\n",
         JSON.stringify(
           resultado,
           null,
