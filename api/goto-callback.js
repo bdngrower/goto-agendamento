@@ -62,19 +62,37 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    const secure = "Secure; HttpOnly; SameSite=Lax; Path=/";
+    const secure =
+      "Secure; HttpOnly; SameSite=Lax; Path=/";
 
     res.setHeader("Set-Cookie", [
-      `goto_access_token=${encodeURIComponent(tokenData.access_token)}; Max-Age=${tokenData.expires_in || 3600}; ${secure}`,
-      `goto_refresh_token=${encodeURIComponent(tokenData.refresh_token)}; Max-Age=2592000; ${secure}`
+      `goto_access_token=${encodeURIComponent(
+        tokenData.access_token
+      )}; Max-Age=${tokenData.expires_in || 3600}; ${secure}`,
+
+      `goto_refresh_token=${encodeURIComponent(
+        tokenData.refresh_token
+      )}; Max-Age=2592000; ${secure}`
     ]);
 
     return res.status(200).json({
       success: true,
       message: "Autenticação GoTo realizada com sucesso.",
+
       principal: tokenData.principal,
+
       scope: tokenData.scope,
+
       expires_in: tokenData.expires_in,
+
+      /*
+       * TEMPORÁRIO:
+       * copie este valor para GOTO_REFRESH_TOKEN na Vercel.
+       * Depois vamos remover essa propriedade do código.
+       */
+      refresh_token_para_configurar_na_vercel:
+        tokenData.refresh_token || null,
+
       next: "/api/goto-account"
     });
 
