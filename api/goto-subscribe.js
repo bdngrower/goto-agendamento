@@ -27,33 +27,28 @@ module.exports = async function handler(req, res) {
           Accept: "application/json"
         },
         body: JSON.stringify({
-          channelId,
-          accountKeys: [
-            {
-              id: accountKey,
-              events: [
-                "STARTING",
-                "ACTIVE",
-                "ENDING"
-              ]
-            }
-          ]
+          channelId: channelId,
+          accountKeys: [accountKey]
         })
       }
     );
 
+    const text = await response.text();
+
     let data;
 
     try {
-      data = await response.json();
+      data = JSON.parse(text);
     } catch {
-      data = await response.text();
+      data = text;
     }
 
-    return res.status(response.status).json({
-      success: response.ok,
-      status: response.status,
-      data
+    return res.status(200).json({
+      gotoStatus: response.status,
+      gotoOk: response.ok,
+      accountKey,
+      channelId,
+      resposta: data
     });
 
   } catch (error) {
