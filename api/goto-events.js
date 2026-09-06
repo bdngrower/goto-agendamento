@@ -1601,6 +1601,66 @@ function extrairData(
 
 
   // ==========================================================
+  // SOMENTE DIA (PORTUGUÊS E INGLÊS)
+  // ==========================================================
+
+  match =
+    texto.match(
+      /\b(?:no\s+|para\s+o\s+)?dia\s+(\d{1,2})\b/
+    ) ||
+    texto.match(
+      /\b(?:on\s+)?(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)\b/
+    );
+
+
+  if (match) {
+    const diaEscolhido =
+      Number(
+        match[1]
+      );
+
+
+    let mesPrevisto =
+      mesAtual;
+
+
+    let anoPrevisto =
+      anoAtual;
+
+
+    if (
+      diaEscolhido < diaAtual
+    ) {
+      mesPrevisto++;
+
+
+      if (
+        mesPrevisto > 12
+      ) {
+        mesPrevisto = 1;
+
+        anoPrevisto++;
+      }
+    }
+
+
+    if (
+      dataExiste(
+        anoPrevisto,
+        mesPrevisto,
+        diaEscolhido
+      )
+    ) {
+      return montarDataISO(
+        anoPrevisto,
+        mesPrevisto,
+        diaEscolhido
+      );
+    }
+  }
+
+
+  // ==========================================================
   // DEPOIS DE AMANHÃ
   // Precisa vir antes de "amanhã".
   // ==========================================================
@@ -2039,24 +2099,6 @@ async function processarChamada(
 
       return;
     }
-
-
-    console.log(
-      "===== ACTIONS COMPLETAS DO REPORT =====",
-      JSON.stringify(relatorio?.actions || [], null, 2)
-    );
-
-    const infoCaptureActions =
-      Array.isArray(relatorio?.actions)
-        ? relatorio.actions.filter(
-            action => action?.type?.value === "INFO_CAPTURE"
-          )
-        : [];
-
-    console.log(
-      "===== INFO_CAPTURE COMPLETO =====",
-      JSON.stringify(infoCaptureActions, null, 2)
-    );
 
 
     const callReason =
