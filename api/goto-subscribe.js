@@ -27,8 +27,16 @@ module.exports = async function handler(req, res) {
           Accept: "application/json"
         },
         body: JSON.stringify({
-          channelId: channelId,
-          accountKeys: [accountKey]
+          channelId,
+          accountKeys: [
+            {
+              id: accountKey,
+              events: [
+                "STARTING",
+                "ENDING"
+              ]
+            }
+          ]
         })
       }
     );
@@ -36,7 +44,6 @@ module.exports = async function handler(req, res) {
     const text = await response.text();
 
     let data;
-
     try {
       data = JSON.parse(text);
     } catch {
