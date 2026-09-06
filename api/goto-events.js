@@ -1,9 +1,19 @@
 module.exports = async function handler(req, res) {
   try {
+    // GoTo valida o endpoint usando OPTIONS
+    if (req.method === "OPTIONS") {
+      res.setHeader("Allow", "GET, POST, OPTIONS");
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+      return res.status(200).end();
+    }
+
+    // Teste manual no navegador
     if (req.method === "GET") {
       return res.status(200).json({
         success: true,
-        message: "Webhook GoTo ativo."
+        message: "Webhook GoTo ativo"
       });
     }
 
@@ -16,31 +26,34 @@ module.exports = async function handler(req, res) {
 
     const payload = req.body;
 
-    // Validação inicial feita pelo GoTo
-    if (Array.isArray(payload)) {
-      const validationCode =
-        payload?.[0]?.data?.validationCode;
+    // Compatibilidade com validações que enviem validationCode
+    const validationCode =
+      Array.isArray(payload)
+        ? payload?.[0]?.data?.validationCode
+        : payload?.data?.validationCode;
 
-      if (validationCode) {
-        console.log(
-          "Validação de webhook GoTo:",
-          validationCode
-        );
-
-        return res.status(200).json({
-          validationResponse: validationCode
-        });
-      }
+    if (validationCode) {
+      return res.status(200).json({
+        validationResponse: validationCode
+      });
     }
 
-    // Eventos normais após o canal estar configurado
+    // O Notification Channel também pode enviar POST vazio
+    if (
+      !payload ||
+      (typeof payload === "object" &&
+        !Array.isArray(payload) &&
+        Object.keys(payload).length === 0)
+    ) {
+      return res.status(200).end();
+    }
+
+    // Evento real
     console.log(
       "=============== GOTO EVENT ==============="
     );
 
-    console.log(
-      JSON.stringify(payload, null, 2)
-    );
+    console.log(JSON.stringify(payload, null, 2));
 
     console.log(
       "=========================================="
@@ -52,7 +65,7 @@ module.exports = async function handler(req, res) {
     });
 
   } catch (error) {
-    console.error("Erro no webhook GoTo:", error);
+    console.error("Erro webhook GoTo:", error);
 
     return res.status(500).json({
       success: false,
