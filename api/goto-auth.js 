@@ -11,11 +11,17 @@ module.exports = async function handler(req, res) {
   const redirectUri =
     "https://goto-agendamento.vercel.app/api/goto-callback";
 
+  const scopes = [
+    "call-events.v1.events.read",
+    "call-events.v1.notifications.manage"
+  ].join(" ");
+
   const authUrl =
     "https://authentication.logmeininc.com/oauth/authorize" +
     `?client_id=${encodeURIComponent(clientId)}` +
     "&response_type=code" +
-    `&redirect_uri=${encodeURIComponent(redirectUri)}`;
+    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+    `&scope=${encodeURIComponent(scopes)}`;
 
   return res.redirect(authUrl);
 };
