@@ -36,12 +36,89 @@ module.exports = async function handler(req, res) {
       data = text;
     }
 
+    // Procura recursivamente qualquer informação relacionada
+    // à IA Recepcionista, agendamento, appointment, scheduling etc.
+    const encontrados = [];
+
+    function procurar(valor, caminho = "root") {
+      if (valor === null || valor === undefined) return;
+
+      if (typeof valor === "string") {
+        const texto = valor.toLowerCase();
+
+        const palavras = [
+          "air_",
+          "ai_insight",
+          "appointment",
+          "scheduling",
+          "schedule",
+          "agendamento",
+          "horario",
+          "horário",
+          "receptionist",
+          "virtualreceptionist"
+        ];
+
+        if (palavras.some(p => texto.includes(p))) {
+          encontrados.push({
+            caminho,
+            valor
+          });
+        }
+
+        return;
+      }
+
+      if (Array.isArray(valor)) {
+        valor.forEach((item, index) => {
+          procurar(item, `${caminho}[${index}]`);
+        });
+        return;
+      }
+
+      if (typeof valor === "object") {
+        Object.entries(valor).forEach(([chave, conteudo]) => {
+          const chaveLower = chave.toLowerCase();
+
+          const palavras = [
+            "air",
+            "ai",
+            "appointment",
+            "scheduling",
+            "schedule",
+            "agendamento",
+            "horario",
+            "receptionist"
+          ];
+
+          if (palavras.some(p => chaveLower.includes(p))) {
+            encontrados.push({
+              caminho: `${caminho}.${chave}`,
+              valor: conteudo
+            });
+          }
+
+          procurar(conteudo, `${caminho}.${chave}`);
+        });
+      }
+    }
+
+    procurar(data);
+
     return res.status(200).json({
-      gotoStatus: response.status,
-      gotoOk: response.ok,
-      urlUsada: url,
+      success: true,
       conversationSpaceId,
-      resposta: data
+
+      resumo: {
+        callCreated: data?.callCreated,
+        callEnded: data?.callEnded,
+        direction: data?.direction,
+        accountKey: data?.accountKey,
+        callReason: data?.callReason,
+        quantidadeEstados: data?.callStates?.length || 0
+      },
+
+      encontrados
     });
 
   } catch (error) {
