@@ -1,5 +1,8 @@
 {
   "name": "goto-agendamento",
   "version": "1.0.0",
-  "private": true
+  "private": true,
+  "dependencies": {
+    "@vercel/functions": "^3.9.5"
+  }
 }
