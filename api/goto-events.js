@@ -342,10 +342,6 @@ async function obterRelatorioCompleto(
       );
 
 
-    // ----------------------------------------------------------
-    // REPORT AINDA NÃO EXISTE
-    // ----------------------------------------------------------
-
     if (
       resultado.status === 404
     ) {
@@ -371,10 +367,6 @@ async function obterRelatorioCompleto(
       );
     }
 
-
-    // ----------------------------------------------------------
-    // OUTRO ERRO
-    // ----------------------------------------------------------
 
     if (!resultado.ok) {
       throw new Error(
@@ -461,6 +453,7 @@ async function obterRelatorioCompleto(
 
 // ============================================================
 // IDENTIFICA INTENÇÃO
+// PORTUGUÊS + INGLÊS
 // ============================================================
 
 function identificarIntencao(
@@ -472,11 +465,6 @@ function identificarIntencao(
     );
 
 
-  // ----------------------------------------------------------
-  // REAGENDAMENTO
-  // Tem prioridade porque pode conter "agendamento".
-  // ----------------------------------------------------------
-
   const palavrasReagendamento = [
     "reagendar",
     "reagendamento",
@@ -487,7 +475,17 @@ function identificarIntencao(
     "alterar o horario",
     "alterar horario",
     "mudar a data",
-    "alterar a data"
+    "alterar a data",
+
+    "reschedule",
+    "rescheduling",
+    "rescheduled",
+    "change appointment",
+    "change the appointment",
+    "change appointment time",
+    "change appointment date",
+    "move appointment",
+    "move the appointment"
   ];
 
 
@@ -503,17 +501,20 @@ function identificarIntencao(
   }
 
 
-  // ----------------------------------------------------------
-  // CANCELAMENTO
-  // ----------------------------------------------------------
-
   const palavrasCancelamento = [
     "cancelar",
     "cancelamento",
     "cancele",
     "cancelado",
     "desmarcar",
-    "desmarcacao"
+    "desmarcacao",
+
+    "cancel",
+    "cancellation",
+    "canceling",
+    "cancelling",
+    "cancelled",
+    "canceled"
   ];
 
 
@@ -529,16 +530,20 @@ function identificarIntencao(
   }
 
 
-  // ----------------------------------------------------------
-  // AGENDAMENTO
-  // ----------------------------------------------------------
-
   const palavrasAgendamento = [
     "agendar",
     "agendamento",
     "marcar",
     "compromisso",
-    "horario"
+    "horario",
+
+    "schedule",
+    "scheduling",
+    "scheduled",
+    "appointment",
+    "book appointment",
+    "booking appointment",
+    "make an appointment"
   ];
 
 
@@ -616,6 +621,7 @@ function numeroPorExtenso(
 
 // ============================================================
 // EXTRAI HORÁRIO
+// PORTUGUÊS + INGLÊS
 // ============================================================
 
 function extrairHorario(
@@ -633,6 +639,137 @@ function extrairHorario(
 
 
   let match;
+
+
+  // ----------------------------------------------------------
+  // 8:00 AM / 8:30 PM
+  // Deve vir ANTES do parser 24h genérico.
+  // ----------------------------------------------------------
+
+  match =
+    texto.match(
+      /\b(1[0-2]|0?[1-9]):([0-5]\d)\s*(a\.?\s*m\.?|p\.?\s*m\.?)\b/i
+    );
+
+
+  if (match) {
+    let hora =
+      Number(
+        match[1]
+      );
+
+
+    const minuto =
+      Number(
+        match[2]
+      );
+
+
+    const periodo =
+      normalizarTexto(
+        match[3]
+      )
+        .replace(
+          /\s/g,
+          ""
+        )
+        .replace(
+          /\./g,
+          ""
+        );
+
+
+    if (
+      periodo === "pm" &&
+      hora !== 12
+    ) {
+      hora += 12;
+    }
+
+
+    if (
+      periodo === "am" &&
+      hora === 12
+    ) {
+      hora = 0;
+    }
+
+
+    return (
+      String(
+        hora
+      ).padStart(
+        2,
+        "0"
+      ) +
+      ":" +
+      String(
+        minuto
+      ).padStart(
+        2,
+        "0"
+      )
+    );
+  }
+
+
+  // ----------------------------------------------------------
+  // 8 AM / 8 PM
+  // ----------------------------------------------------------
+
+  match =
+    texto.match(
+      /\b(1[0-2]|0?[1-9])\s*(a\.?\s*m\.?|p\.?\s*m\.?)\b/i
+    );
+
+
+  if (match) {
+    let hora =
+      Number(
+        match[1]
+      );
+
+
+    const periodo =
+      normalizarTexto(
+        match[2]
+      )
+        .replace(
+          /\s/g,
+          ""
+        )
+        .replace(
+          /\./g,
+          ""
+        );
+
+
+    if (
+      periodo === "pm" &&
+      hora !== 12
+    ) {
+      hora += 12;
+    }
+
+
+    if (
+      periodo === "am" &&
+      hora === 12
+    ) {
+      hora = 0;
+    }
+
+
+    return (
+      String(
+        hora
+      ).padStart(
+        2,
+        "0"
+      ) +
+      ":00"
+    );
+  }
 
 
   // ----------------------------------------------------------
@@ -907,7 +1044,84 @@ function dataExiste(
 
 
 // ============================================================
+// DEFINE ANO PARA DATA SEM ANO
+// ============================================================
+
+function resolverAnoDataSemAno(
+  anoAtual,
+  mesAtual,
+  diaAtual,
+  mes,
+  dia
+) {
+  let ano =
+    anoAtual;
+
+
+  if (
+    !dataExiste(
+      ano,
+      mes,
+      dia
+    )
+  ) {
+    return null;
+  }
+
+
+  const dataInformada =
+    new Date(
+      Date.UTC(
+        ano,
+        mes - 1,
+        dia,
+        12,
+        0,
+        0
+      )
+    );
+
+
+  const dataChamada =
+    new Date(
+      Date.UTC(
+        anoAtual,
+        mesAtual - 1,
+        diaAtual,
+        12,
+        0,
+        0
+      )
+    );
+
+
+  if (
+    dataInformada <
+    dataChamada
+  ) {
+    ano =
+      anoAtual + 1;
+  }
+
+
+  if (
+    !dataExiste(
+      ano,
+      mes,
+      dia
+    )
+  ) {
+    return null;
+  }
+
+
+  return ano;
+}
+
+
+// ============================================================
 // EXTRAI DATA
+// PORTUGUÊS + INGLÊS
 // ============================================================
 
 function extrairData(
@@ -935,6 +1149,7 @@ function extrairData(
 
 
   const meses = {
+    // Português
     janeiro: 1,
     fevereiro: 2,
     marco: 3,
@@ -946,13 +1161,37 @@ function extrairData(
     setembro: 9,
     outubro: 10,
     novembro: 11,
-    dezembro: 12
+    dezembro: 12,
+
+    // Inglês
+    january: 1,
+    february: 2,
+    march: 3,
+    april: 4,
+    may: 5,
+    june: 6,
+    july: 7,
+    august: 8,
+    september: 9,
+    october: 10,
+    november: 11,
+    december: 12,
+
+    // Inglês abreviado
+    jan: 1,
+    feb: 2,
+    mar: 3,
+    apr: 4,
+    jun: 6,
+    jul: 7,
+    aug: 8,
+    sep: 9,
+    sept: 9,
+    oct: 10,
+    nov: 11,
+    dec: 12
   };
 
-
-  // ----------------------------------------------------------
-  // DATA BASE DA CHAMADA NO FUSO DE SÃO PAULO
-  // ----------------------------------------------------------
 
   const criada =
     new Date(
@@ -976,12 +1215,15 @@ function extrairData(
       .map(Number);
 
 
+  let match;
+
+
   // ==========================================================
+  // PORTUGUÊS
   // 8 DE SETEMBRO DE 2026
-  // DIA 8 DE SETEMBRO DE 2026
   // ==========================================================
 
-  let match =
+  match =
     texto.match(
       /(?:dia\s+)?(\d{1,2})\s+de\s+([a-záéíóúâêôãõç]+)\s+de\s+(\d{4})/
     );
@@ -1030,11 +1272,8 @@ function extrairData(
 
 
   // ==========================================================
+  // PORTUGUÊS
   // 8 DE SETEMBRO
-  // DIA 8 DE SETEMBRO
-  //
-  // Se a data já tiver passado neste ano,
-  // assume o próximo ano.
   // ==========================================================
 
   match =
@@ -1063,64 +1302,17 @@ function extrairData(
 
 
     if (mes) {
-      let ano =
-        anoAtual;
-
-
-      if (
-        !dataExiste(
-          ano,
+      const ano =
+        resolverAnoDataSemAno(
+          anoAtual,
+          mesAtual,
+          diaAtual,
           mes,
           dia
-        )
-      ) {
-        return null;
-      }
-
-
-      const dataInformada =
-        new Date(
-          Date.UTC(
-            ano,
-            mes - 1,
-            dia,
-            12,
-            0,
-            0
-          )
         );
 
 
-      const dataChamada =
-        new Date(
-          Date.UTC(
-            anoAtual,
-            mesAtual - 1,
-            diaAtual,
-            12,
-            0,
-            0
-          )
-        );
-
-
-      // Se já passou, interpreta como próximo ano.
-      if (
-        dataInformada <
-        dataChamada
-      ) {
-        ano =
-          anoAtual + 1;
-      }
-
-
-      if (
-        dataExiste(
-          ano,
-          mes,
-          dia
-        )
-      ) {
+      if (ano) {
         return montarDataISO(
           ano,
           mes,
@@ -1132,47 +1324,229 @@ function extrairData(
 
 
   // ==========================================================
-  // AMANHÃ
+  // INGLÊS
+  // SEPTEMBER 9TH, 2026
+  // SEPTEMBER 9, 2026
   // ==========================================================
 
-  if (
-    textoNormalizado.includes(
-      "amanha"
-    )
-  ) {
-    const base =
-      new Date(
-        Date.UTC(
-          anoAtual,
-          mesAtual - 1,
-          diaAtual,
-          12,
-          0,
-          0
-        )
+  match =
+    texto.match(
+      /\b([a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,)?\s+(\d{4})\b/i
+    );
+
+
+  if (match) {
+    const nomeMes =
+      normalizarTexto(
+        match[1]
       );
 
 
-    base.setUTCDate(
-      base.getUTCDate() + 1
+    const mes =
+      meses[
+        nomeMes
+      ];
+
+
+    const dia =
+      Number(
+        match[2]
+      );
+
+
+    const ano =
+      Number(
+        match[3]
+      );
+
+
+    if (
+      mes &&
+      dataExiste(
+        ano,
+        mes,
+        dia
+      )
+    ) {
+      return montarDataISO(
+        ano,
+        mes,
+        dia
+      );
+    }
+  }
+
+
+  // ==========================================================
+  // INGLÊS
+  // SEPTEMBER 9TH
+  // SEPTEMBER 9
+  // ==========================================================
+
+  match =
+    texto.match(
+      /\b([a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?\b/i
     );
 
 
-    return montarDataISO(
-      base.getUTCFullYear(),
-      base.getUTCMonth() + 1,
-      base.getUTCDate()
+  if (match) {
+    const nomeMes =
+      normalizarTexto(
+        match[1]
+      );
+
+
+    const mes =
+      meses[
+        nomeMes
+      ];
+
+
+    const dia =
+      Number(
+        match[2]
+      );
+
+
+    if (mes) {
+      const ano =
+        resolverAnoDataSemAno(
+          anoAtual,
+          mesAtual,
+          diaAtual,
+          mes,
+          dia
+        );
+
+
+      if (ano) {
+        return montarDataISO(
+          ano,
+          mes,
+          dia
+        );
+      }
+    }
+  }
+
+
+  // ==========================================================
+  // INGLÊS
+  // 9TH OF SEPTEMBER 2026
+  // 9 OF SEPTEMBER 2026
+  // ==========================================================
+
+  match =
+    texto.match(
+      /\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?([a-z]+)\s+(\d{4})\b/i
     );
+
+
+  if (match) {
+    const dia =
+      Number(
+        match[1]
+      );
+
+
+    const nomeMes =
+      normalizarTexto(
+        match[2]
+      );
+
+
+    const mes =
+      meses[
+        nomeMes
+      ];
+
+
+    const ano =
+      Number(
+        match[3]
+      );
+
+
+    if (
+      mes &&
+      dataExiste(
+        ano,
+        mes,
+        dia
+      )
+    ) {
+      return montarDataISO(
+        ano,
+        mes,
+        dia
+      );
+    }
+  }
+
+
+  // ==========================================================
+  // INGLÊS
+  // 9TH OF SEPTEMBER
+  // ==========================================================
+
+  match =
+    texto.match(
+      /\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)([a-z]+)\b/i
+    );
+
+
+  if (match) {
+    const dia =
+      Number(
+        match[1]
+      );
+
+
+    const nomeMes =
+      normalizarTexto(
+        match[2]
+      );
+
+
+    const mes =
+      meses[
+        nomeMes
+      ];
+
+
+    if (mes) {
+      const ano =
+        resolverAnoDataSemAno(
+          anoAtual,
+          mesAtual,
+          diaAtual,
+          mes,
+          dia
+        );
+
+
+      if (ano) {
+        return montarDataISO(
+          ano,
+          mes,
+          dia
+        );
+      }
+    }
   }
 
 
   // ==========================================================
   // DEPOIS DE AMANHÃ
+  // Precisa vir antes de "amanhã".
   // ==========================================================
 
   if (
     textoNormalizado.includes(
       "depois de amanha"
+    ) ||
+    textoNormalizado.includes(
+      "day after tomorrow"
     )
   ) {
     const base =
@@ -1202,12 +1576,53 @@ function extrairData(
 
 
   // ==========================================================
-  // HOJE
+  // AMANHÃ / TOMORROW
+  // ==========================================================
+
+  if (
+    textoNormalizado.includes(
+      "amanha"
+    ) ||
+    textoNormalizado.includes(
+      "tomorrow"
+    )
+  ) {
+    const base =
+      new Date(
+        Date.UTC(
+          anoAtual,
+          mesAtual - 1,
+          diaAtual,
+          12,
+          0,
+          0
+        )
+      );
+
+
+    base.setUTCDate(
+      base.getUTCDate() + 1
+    );
+
+
+    return montarDataISO(
+      base.getUTCFullYear(),
+      base.getUTCMonth() + 1,
+      base.getUTCDate()
+    );
+  }
+
+
+  // ==========================================================
+  // HOJE / TODAY
   // ==========================================================
 
   if (
     textoNormalizado.includes(
       "hoje"
+    ) ||
+    textoNormalizado.includes(
+      "today"
     )
   ) {
     return dataLocal;
@@ -1216,20 +1631,14 @@ function extrairData(
 
   // ==========================================================
   // DIAS DA SEMANA
-  //
-  // domingo = 0
-  // segunda = 1
-  // terça   = 2
-  // quarta  = 3
-  // quinta  = 4
-  // sexta   = 5
-  // sábado  = 6
+  // PORTUGUÊS + INGLÊS
   // ==========================================================
 
   const diasSemana = [
     {
       nomes: [
-        "domingo"
+        "domingo",
+        "sunday"
       ],
       numero: 0
     },
@@ -1238,7 +1647,8 @@ function extrairData(
       nomes: [
         "segunda",
         "segunda-feira",
-        "segunda feira"
+        "segunda feira",
+        "monday"
       ],
       numero: 1
     },
@@ -1247,7 +1657,8 @@ function extrairData(
       nomes: [
         "terca",
         "terca-feira",
-        "terca feira"
+        "terca feira",
+        "tuesday"
       ],
       numero: 2
     },
@@ -1256,7 +1667,8 @@ function extrairData(
       nomes: [
         "quarta",
         "quarta-feira",
-        "quarta feira"
+        "quarta feira",
+        "wednesday"
       ],
       numero: 3
     },
@@ -1265,7 +1677,8 @@ function extrairData(
       nomes: [
         "quinta",
         "quinta-feira",
-        "quinta feira"
+        "quinta feira",
+        "thursday"
       ],
       numero: 4
     },
@@ -1274,14 +1687,16 @@ function extrairData(
       nomes: [
         "sexta",
         "sexta-feira",
-        "sexta feira"
+        "sexta feira",
+        "friday"
       ],
       numero: 5
     },
 
     {
       nomes: [
-        "sabado"
+        "sabado",
+        "saturday"
       ],
       numero: 6
     }
@@ -1331,14 +1746,6 @@ function extrairData(
       ) % 7;
 
 
-    /*
-     * Se alguém disser "quarta-feira"
-     * numa quarta, interpretamos como
-     * a próxima quarta.
-     *
-     * "hoje" já é tratado acima.
-     */
-
     if (
       diferenca === 0
     ) {
@@ -1371,10 +1778,6 @@ function extrairData(
 function obterTelefone(
   relatorio
 ) {
-  // ----------------------------------------------------------
-  // PARTICIPANTS PRINCIPAL
-  // ----------------------------------------------------------
-
   const participants =
     Array.isArray(
       relatorio?.participants
@@ -1399,10 +1802,6 @@ function obterTelefone(
     }
   }
 
-
-  // ----------------------------------------------------------
-  // FALLBACK CALL STATES
-  // ----------------------------------------------------------
 
   const callStates =
     Array.isArray(
@@ -1558,17 +1957,9 @@ async function processarChamada(
     );
 
 
-    // ----------------------------------------------------------
-    // TOKEN
-    // ----------------------------------------------------------
-
     const accessToken =
       await obterAccessTokenGoTo();
 
-
-    // ----------------------------------------------------------
-    // REPORT
-    // ----------------------------------------------------------
 
     const relatorio =
       await obterRelatorioCompleto(
@@ -1585,10 +1976,6 @@ async function processarChamada(
       return;
     }
 
-
-    // ----------------------------------------------------------
-    // CALL REASON
-    // ----------------------------------------------------------
 
     const callReason =
       obterCallReasonIA(
@@ -1611,10 +1998,6 @@ async function processarChamada(
     }
 
 
-    // ----------------------------------------------------------
-    // INTENÇÃO
-    // ----------------------------------------------------------
-
     const intencao =
       identificarIntencao(
         callReason
@@ -1626,10 +2009,6 @@ async function processarChamada(
       intencao
     );
 
-
-    // ----------------------------------------------------------
-    // TELEFONE
-    // ----------------------------------------------------------
 
     const telefone =
       obterTelefone(
@@ -1707,25 +2086,6 @@ async function processarChamada(
       console.log(
         "Fluxo escolhido: REAGENDAMENTO"
       );
-
-
-      /*
-       * IMPORTANTE:
-       *
-       * O endpoint /api/agendamento já possui
-       * a ação "reagendar".
-       *
-       * Porém não vamos executar automaticamente
-       * aqui porque ainda precisamos:
-       *
-       * 1. localizar qual compromisso;
-       * 2. confirmar com o cliente;
-       * 3. receber a nova data;
-       * 4. receber o novo horário.
-       *
-       * Isso será feito através da Custom Connection
-       * durante a própria chamada.
-       */
 
 
       console.log(
@@ -1846,10 +2206,6 @@ async function processarChamada(
     }
 
 
-    // ==========================================================
-    // DESCONHECIDA
-    // ==========================================================
-
     console.log(
       "Nenhuma automação executada."
     );
@@ -1888,10 +2244,6 @@ module.exports =
     res
   ) {
     try {
-      // --------------------------------------------------------
-      // OPTIONS
-      // --------------------------------------------------------
-
       if (
         req.method ===
         "OPTIONS"
@@ -1920,10 +2272,6 @@ module.exports =
       }
 
 
-      // --------------------------------------------------------
-      // GET
-      // --------------------------------------------------------
-
       if (
         req.method ===
         "GET"
@@ -1941,7 +2289,7 @@ module.exports =
               "/api/agendamento",
 
             mode:
-              "api-unificada",
+              "api-unificada-bilingue",
 
             background:
               true,
@@ -1957,10 +2305,6 @@ module.exports =
           });
       }
 
-
-      // --------------------------------------------------------
-      // SOMENTE POST
-      // --------------------------------------------------------
 
       if (
         req.method !==
@@ -1981,10 +2325,6 @@ module.exports =
       const payload =
         req.body;
 
-
-      // --------------------------------------------------------
-      // VALIDATION CODE
-      // --------------------------------------------------------
 
       const validationCode =
         Array.isArray(
@@ -2012,10 +2352,6 @@ module.exports =
       }
 
 
-      // --------------------------------------------------------
-      // POST VAZIO
-      // --------------------------------------------------------
-
       if (
         !payload ||
         (
@@ -2036,10 +2372,6 @@ module.exports =
           .end();
       }
 
-
-      // --------------------------------------------------------
-      // NORMALIZA EVENTO
-      // --------------------------------------------------------
 
       const evento =
         Array.isArray(
@@ -2096,10 +2428,6 @@ module.exports =
       );
 
 
-      // --------------------------------------------------------
-      // CONTA DEMO
-      // --------------------------------------------------------
-
       if (
         accountKey &&
         accountKey !==
@@ -2119,10 +2447,6 @@ module.exports =
           });
       }
 
-
-      // --------------------------------------------------------
-      // SOMENTE ENDING
-      // --------------------------------------------------------
 
       if (
         state?.type !==
@@ -2147,10 +2471,6 @@ module.exports =
       }
 
 
-      // --------------------------------------------------------
-      // SEM CONVERSATION ID
-      // --------------------------------------------------------
-
       if (
         !conversationSpaceId
       ) {
@@ -2172,10 +2492,6 @@ module.exports =
       }
 
 
-      // --------------------------------------------------------
-      // BACKGROUND
-      // --------------------------------------------------------
-
       console.log(
         "Disparando processamento:",
         conversationSpaceId
@@ -2188,10 +2504,6 @@ module.exports =
         )
       );
 
-
-      // --------------------------------------------------------
-      // RESPONDE AO GOTO
-      // --------------------------------------------------------
 
       return res
         .status(200)
