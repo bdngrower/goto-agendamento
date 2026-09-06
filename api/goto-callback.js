@@ -46,6 +46,7 @@ module.exports = async function handler(req, res) {
       "https://authentication.logmeininc.com/oauth/token",
       {
         method: "POST",
+
         headers: {
           Authorization: `Basic ${basicAuth}`,
           "Content-Type":
@@ -54,13 +55,9 @@ module.exports = async function handler(req, res) {
         },
 
         body: new URLSearchParams({
-          grant_type:
-            "authorization_code",
-
+          grant_type: "authorization_code",
           code,
-
-          redirect_uri:
-            redirectUri
+          redirect_uri: redirectUri
         })
       }
     );
@@ -84,8 +81,7 @@ module.exports = async function handler(req, res) {
           success: false,
           error:
             "Erro ao obter token GoTo",
-          details:
-            tokenData
+          details: tokenData
         });
     }
 
@@ -94,8 +90,7 @@ module.exports = async function handler(req, res) {
         success: false,
         error:
           "GoTo não retornou access_token",
-        details:
-          tokenData
+        details: tokenData
       });
     }
 
@@ -135,6 +130,11 @@ module.exports = async function handler(req, res) {
       expires_in:
         tokenData.expires_in || null,
 
+      // TEMPORÁRIO PARA O POC
+      // REMOVER DEPOIS DE SALVAR NA VERCEL
+      refresh_token_para_configurar_na_vercel:
+        tokenData.refresh_token || null,
+
       next:
         "/api/goto-account"
     });
@@ -147,8 +147,7 @@ module.exports = async function handler(req, res) {
 
     return res.status(500).json({
       success: false,
-      error:
-        error.message
+      error: error.message
     });
   }
 };
