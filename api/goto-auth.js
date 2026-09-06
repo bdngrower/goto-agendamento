@@ -14,7 +14,8 @@ module.exports = async function handler(req, res) {
   const scopes = [
     "call-events.v1.notifications.manage",
     "call-events.v1.events.read",
-    "cr.v1.read"
+    "cr.v1.read",
+    "recording.v1.read"
   ].join(" ");
 
   const authUrl =
