@@ -12,7 +12,7 @@ module.exports = async function handler(req, res) {
 
     const accessToken = decodeURIComponent(match[1]);
 
-    const accountKey = "945437456073062917";
+    const accountKey = "5316599808366110732";
 
     const channelId =
       "Webhook.8b34a9c5-9e5a-4f09-a88c-56c28ac1f8d1";
