@@ -11,11 +11,17 @@ const GOTO_ACCOUNT_KEY =
 const FORMULARIO_AGENDAMENTO =
   "Agendamento Microsoft 365";
 
-const TIMEZONE =
-  "America/Sao_Paulo";
+const URL_BASE =
+  "https://goto-agendamento.vercel.app";
 
 const URL_AGENDAR =
-  "https://goto-agendamento.vercel.app/api/agendar";
+  `${URL_BASE}/api/agendar`;
+
+const URL_CANCELAR =
+  `${URL_BASE}/api/cancelar`;
+
+const TIMEZONE =
+  "America/Sao_Paulo";
 
 
 // ============================================================
@@ -34,6 +40,23 @@ function esperar(ms) {
     (resolve) =>
       setTimeout(resolve, ms)
   );
+}
+
+
+// ============================================================
+// NORMALIZA TEXTO
+// ============================================================
+
+function normalizarTexto(texto) {
+  return String(
+    texto || ""
+  )
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(
+      /[\u0300-\u036f]/g,
+      ""
+    );
 }
 
 
@@ -191,33 +214,7 @@ async function consultarRelatorio(
 
 
 // ============================================================
-// CONFIRMA INFO_CAPTURE
-// ============================================================
-
-function possuiCapturaAgendamento(
-  relatorio
-) {
-  const actions =
-    Array.isArray(
-      relatorio?.actions
-    )
-      ? relatorio.actions
-      : [];
-
-
-  return actions.some(
-    (action) =>
-      action?.type?.value ===
-        "INFO_CAPTURE" &&
-
-      action?.type?.form?.name ===
-        FORMULARIO_AGENDAMENTO
-  );
-}
-
-
-// ============================================================
-// PROCURA CALL REASON DA IA NOS CALL STATES
+// PROCURA CALL REASON DA IA
 // ============================================================
 
 function obterCallReasonIA(
@@ -230,12 +227,6 @@ function obterCallReasonIA(
       ? relatorio.callStates
       : [];
 
-
-  /*
-   * Percorremos de trás para frente porque
-   * normalmente o resultado final da IA aparece
-   * nos últimos estados da chamada.
-   */
 
   for (
     let i =
@@ -277,8 +268,7 @@ function obterCallReasonIA(
 
 
       if (
-        typeof callReason ===
-          "string" &&
+        typeof callReason === "string" &&
         callReason.trim()
       ) {
         return callReason.trim();
@@ -292,33 +282,33 @@ function obterCallReasonIA(
 
 
 // ============================================================
-// REPORT ESTÁ PRONTO?
+// VERIFICA INFO_CAPTURE
 // ============================================================
 
-function relatorioEstaPronto(
+function possuiCapturaAgendamento(
   relatorio
 ) {
-  const infoCapture =
-    possuiCapturaAgendamento(
-      relatorio
-    );
+  const actions =
+    Array.isArray(
+      relatorio?.actions
+    )
+      ? relatorio.actions
+      : [];
 
 
-  const callReason =
-    obterCallReasonIA(
-      relatorio
-    );
+  return actions.some(
+    (action) =>
+      action?.type?.value ===
+        "INFO_CAPTURE" &&
 
-
-  return (
-    infoCapture &&
-    !!callReason
+      action?.type?.form?.name ===
+        FORMULARIO_AGENDAMENTO
   );
 }
 
 
 // ============================================================
-// AGUARDA REPORT TER INFO_CAPTURE + CALL REASON
+// AGUARDA REPORT COMPLETO
 // ============================================================
 
 async function obterRelatorioCompleto(
@@ -331,14 +321,6 @@ async function obterRelatorioCompleto(
 
   let ultimoRelatorio = null;
 
-
-  /*
-   * Pequeno atraso inicial.
-   *
-   * O evento ENDING pode chegar alguns instantes
-   * antes do Call Events Report terminar de ser
-   * preenchido.
-   */
 
   await esperar(1500);
 
@@ -388,7 +370,7 @@ async function obterRelatorioCompleto(
 
 
       throw new Error(
-        "Call Events Report permaneceu 404 até o limite de tentativas"
+        "Call Events Report permaneceu 404 até o limite"
       );
     }
 
@@ -412,14 +394,14 @@ async function obterRelatorioCompleto(
       relatorio;
 
 
-    const infoCapture =
-      possuiCapturaAgendamento(
+    const callReason =
+      obterCallReasonIA(
         relatorio
       );
 
 
-    const callReason =
-      obterCallReasonIA(
+    const infoCapture =
+      possuiCapturaAgendamento(
         relatorio
       );
 
@@ -451,15 +433,15 @@ async function obterRelatorioCompleto(
     );
 
 
-    // ----------------------------------------------------------
-    // REPORT PRONTO
-    // ----------------------------------------------------------
+    /*
+     * Para nossa automação, o callReason é a peça
+     * principal para descobrir a intenção.
+     *
+     * O INFO_CAPTURE continua sendo útil para
+     * confirmar que passou pelo fluxo configurado.
+     */
 
-    if (
-      relatorioEstaPronto(
-        relatorio
-      )
-    ) {
+    if (callReason) {
       console.log(
         "Call Events Report pronto para processamento."
       );
@@ -484,31 +466,107 @@ async function obterRelatorioCompleto(
   }
 
 
-  console.log(
-    "Limite de tentativas atingido."
-  );
-
-
   return ultimoRelatorio;
 }
 
 
 // ============================================================
-// NORMALIZA TEXTO
+// IDENTIFICA INTENÇÃO
 // ============================================================
 
-function normalizarTexto(
-  texto
+function identificarIntencao(
+  callReason
 ) {
-  return String(
-    texto || ""
-  )
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(
-      /[\u0300-\u036f]/g,
-      ""
+  const texto =
+    normalizarTexto(
+      callReason
     );
+
+
+  // ----------------------------------------------------------
+  // REAGENDAMENTO
+  // Fica preparado, mas ainda não executamos.
+  // Tem prioridade porque "reagendamento" contém "agendamento".
+  // ----------------------------------------------------------
+
+  const palavrasReagendamento = [
+    "reagendar",
+    "reagendamento",
+    "remarcar",
+    "remarcacao",
+    "mudar o horario",
+    "mudar horario",
+    "alterar o horario",
+    "alterar horario",
+    "mudar a data",
+    "alterar a data"
+  ];
+
+
+  if (
+    palavrasReagendamento.some(
+      (palavra) =>
+        texto.includes(
+          palavra
+        )
+    )
+  ) {
+    return "REAGENDAR";
+  }
+
+
+  // ----------------------------------------------------------
+  // CANCELAMENTO
+  // ----------------------------------------------------------
+
+  const palavrasCancelamento = [
+    "cancelar",
+    "cancelamento",
+    "cancele",
+    "cancelado",
+    "desmarcar",
+    "desmarcacao"
+  ];
+
+
+  if (
+    palavrasCancelamento.some(
+      (palavra) =>
+        texto.includes(
+          palavra
+        )
+    )
+  ) {
+    return "CANCELAR";
+  }
+
+
+  // ----------------------------------------------------------
+  // AGENDAMENTO
+  // ----------------------------------------------------------
+
+  const palavrasAgendamento = [
+    "agendar",
+    "agendamento",
+    "marcar",
+    "compromisso",
+    "horario"
+  ];
+
+
+  if (
+    palavrasAgendamento.some(
+      (palavra) =>
+        texto.includes(
+          palavra
+        )
+    )
+  ) {
+    return "AGENDAR";
+  }
+
+
+  return "DESCONHECIDA";
 }
 
 
@@ -553,14 +611,11 @@ function numeroPorExtenso(
     quinze: 15,
 
     dezesseis: 16,
-    dezasseis: 16,
-
-    dezessete: 17,
     dezassete: 17,
+    dezessete: 17,
 
     dezoito: 18,
     dezenove: 19,
-
     vinte: 20
   };
 
@@ -593,7 +648,7 @@ function extrairHorario(
 
 
   // ----------------------------------------------------------
-  // 16:45
+  // 15:45
   // ----------------------------------------------------------
 
   match =
@@ -619,8 +674,7 @@ function extrairHorario(
 
 
   // ----------------------------------------------------------
-  // 16h45
-  // 16 h 45
+  // 15h45
   // ----------------------------------------------------------
 
   match =
@@ -646,7 +700,7 @@ function extrairHorario(
 
 
   // ----------------------------------------------------------
-  // 16 horas e 45 minutos
+  // 15 horas e 45 minutos
   // ----------------------------------------------------------
 
   match =
@@ -679,33 +733,7 @@ function extrairHorario(
 
 
   // ----------------------------------------------------------
-  // às 16h
-  // ----------------------------------------------------------
-
-  match =
-    texto.match(
-      /(?:às|as)\s+([01]?\d|2[0-3])\s*h\b/
-    );
-
-
-  if (match) {
-    return (
-      String(
-        Number(
-          match[1]
-        )
-      ).padStart(
-        2,
-        "0"
-      ) +
-      ":00"
-    );
-  }
-
-
-  // ----------------------------------------------------------
-  // às 16 horas
-  // às 16
+  // ÀS 15
   // ----------------------------------------------------------
 
   match =
@@ -730,7 +758,7 @@ function extrairHorario(
 
 
   // ----------------------------------------------------------
-  // às dez e meia
+  // DEZ E MEIA
   // ----------------------------------------------------------
 
   match =
@@ -766,49 +794,12 @@ function extrairHorario(
   }
 
 
-  // ----------------------------------------------------------
-  // às quatorze horas
-  // ----------------------------------------------------------
-
-  match =
-    texto.match(
-      /(?:às|as)\s+([a-záéíóúâêôãõç]+)\s+horas?/
-    );
-
-
-  if (match) {
-    const hora =
-      numeroPorExtenso(
-        match[1]
-      );
-
-
-    if (
-      Number.isInteger(
-        hora
-      ) &&
-      hora >= 0 &&
-      hora <= 23
-    ) {
-      return (
-        String(
-          hora
-        ).padStart(
-          2,
-          "0"
-        ) +
-        ":00"
-      );
-    }
-  }
-
-
   return null;
 }
 
 
 // ============================================================
-// DATA LOCAL YYYY-MM-DD
+// DATA LOCAL
 // ============================================================
 
 function dataLocalISO(
@@ -887,11 +878,6 @@ function extrairData(
     ).toLowerCase();
 
 
-  // ----------------------------------------------------------
-  // 6 de setembro de 2026
-  // dia 6 de setembro de 2026
-  // ----------------------------------------------------------
-
   let match =
     texto.match(
       /(?:dia\s+)?(\d{1,2})\s+de\s+([a-záéíóúâêôãõç]+)\s+de\s+(\d{4})/
@@ -939,11 +925,7 @@ function extrairData(
       );
 
 
-    if (
-      mes &&
-      dia >= 1 &&
-      dia <= 31
-    ) {
+    if (mes) {
       return (
         `${ano}-` +
         `${String(
@@ -962,10 +944,6 @@ function extrairData(
     }
   }
 
-
-  // ----------------------------------------------------------
-  // DATA BASE DA CHAMADA
-  // ----------------------------------------------------------
 
   const criada =
     new Date(
@@ -1063,7 +1041,7 @@ function obterTelefone(
   relatorio
 ) {
   // ----------------------------------------------------------
-  // TENTA PARTICIPANTS PRINCIPAL
+  // PARTICIPANTS PRINCIPAL
   // ----------------------------------------------------------
 
   const participants =
@@ -1092,7 +1070,7 @@ function obterTelefone(
 
 
   // ----------------------------------------------------------
-  // FALLBACK: CALL STATES
+  // FALLBACK CALL STATES
   // ----------------------------------------------------------
 
   const callStates =
@@ -1138,16 +1116,13 @@ function obterTelefone(
 
 
 // ============================================================
-// CHAMA /API/AGENDAR
+// CHAMA API INTERNA
 // ============================================================
 
-async function criarAgendamento({
-  data,
-  horario,
-  telefone,
-  conversationSpaceId,
-  callReason
-}) {
+async function chamarApiInterna(
+  url,
+  body
+) {
   const apiKey =
     process.env.GOTO_API_KEY;
 
@@ -1161,10 +1136,9 @@ async function criarAgendamento({
 
   const response =
     await fetch(
-      URL_AGENDAR,
+      url,
       {
-        method:
-          "POST",
+        method: "POST",
 
         headers: {
           "Content-Type":
@@ -1175,25 +1149,9 @@ async function criarAgendamento({
         },
 
         body:
-          JSON.stringify({
-            data,
-
-            horario,
-
-            nome:
-              telefone
-                ? `Telefone ${telefone}`
-                : "Cliente GoTo",
-
-            telefone,
-
-            conversationSpaceId,
-
-            origem:
-              "GoTo IA Recepcionista",
-
-            callReason
-          })
+          JSON.stringify(
+            body
+          )
       }
     );
 
@@ -1207,9 +1165,7 @@ async function criarAgendamento({
 
   try {
     result =
-      JSON.parse(
-        text
-      );
+      JSON.parse(text);
   } catch {
     result = text;
   }
@@ -1228,7 +1184,7 @@ async function criarAgendamento({
 
 
 // ============================================================
-// PROCESSA A CHAMADA
+// PROCESSA CHAMADA
 // ============================================================
 
 async function processarChamada(
@@ -1259,7 +1215,7 @@ async function processarChamada(
     );
 
     console.log(
-      "===== PROCESSANDO AGENDAMENTO GOTO ====="
+      "===== PROCESSANDO CHAMADA GOTO ====="
     );
 
     console.log(
@@ -1273,7 +1229,7 @@ async function processarChamada(
 
 
     // ----------------------------------------------------------
-    // ACCESS TOKEN
+    // TOKEN
     // ----------------------------------------------------------
 
     const accessToken =
@@ -1301,26 +1257,7 @@ async function processarChamada(
 
 
     // ----------------------------------------------------------
-    // CONFIRMA INFO_CAPTURE
-    // ----------------------------------------------------------
-
-    const possuiCaptura =
-      possuiCapturaAgendamento(
-        relatorio
-      );
-
-
-    if (!possuiCaptura) {
-      console.log(
-        "Chamada ignorada: INFO_CAPTURE do formulário não encontrado."
-      );
-
-      return;
-    }
-
-
-    // ----------------------------------------------------------
-    // CALL REASON CORRETO
+    // CALL REASON
     // ----------------------------------------------------------
 
     const callReason =
@@ -1337,7 +1274,7 @@ async function processarChamada(
 
     if (!callReason) {
       console.log(
-        "Agendamento não criado: callReason da IA não encontrado."
+        "Não foi possível identificar a intenção da chamada."
       );
 
       return;
@@ -1345,21 +1282,24 @@ async function processarChamada(
 
 
     // ----------------------------------------------------------
-    // EXTRAÇÃO
+    // INTENÇÃO
     // ----------------------------------------------------------
 
-    const horario =
-      extrairHorario(
+    const intencao =
+      identificarIntencao(
         callReason
       );
 
 
-    const data =
-      extrairData(
-        callReason,
-        relatorio?.callCreated
-      );
+    console.log(
+      "INTENÇÃO IDENTIFICADA:",
+      intencao
+    );
 
+
+    // ----------------------------------------------------------
+    // TELEFONE
+    // ----------------------------------------------------------
 
     const telefone =
       obterTelefone(
@@ -1368,84 +1308,209 @@ async function processarChamada(
 
 
     console.log(
-      "DADOS EXTRAÍDOS:",
-      JSON.stringify(
-        {
-          data,
-          horario,
-          telefone,
-          callReason
-        },
-        null,
-        2
-      )
+      "TELEFONE:",
+      telefone
     );
 
 
-    // ----------------------------------------------------------
-    // VALIDAÇÃO
-    // ----------------------------------------------------------
+    // ==========================================================
+    // CANCELAMENTO
+    // ==========================================================
 
     if (
-      !data ||
-      !horario
+      intencao ===
+      "CANCELAR"
     ) {
       console.log(
-        "AGENDAMENTO NÃO CRIADO."
+        "Fluxo escolhido: CANCELAMENTO"
+      );
+
+
+      const resultado =
+        await chamarApiInterna(
+          URL_CANCELAR,
+          {
+            telefone,
+
+            conversationSpaceId,
+
+            callReason
+          }
+        );
+
+
+      console.log(
+        "RESULTADO /API/CANCELAR:",
+        JSON.stringify(
+          resultado,
+          null,
+          2
+        )
+      );
+
+
+      if (
+        resultado.ok
+      ) {
+        console.log(
+          "===== CANCELAMENTO PROCESSADO COM SUCESSO ====="
+        );
+      } else {
+        console.log(
+          "===== CANCELAMENTO NÃO CONCLUÍDO ====="
+        );
+      }
+
+
+      return;
+    }
+
+
+    // ==========================================================
+    // REAGENDAMENTO
+    // ==========================================================
+
+    if (
+      intencao ===
+      "REAGENDAR"
+    ) {
+      console.log(
+        "Fluxo de REAGENDAMENTO identificado."
       );
 
       console.log(
-        "Motivo: data ou horário não identificado."
+        "Reagendamento ainda não implementado no backend."
       );
 
       return;
     }
 
 
-    // ----------------------------------------------------------
-    // CHAMA API DE AGENDAMENTO
-    // ----------------------------------------------------------
-
-    console.log(
-      "Chamando /api/agendar..."
-    );
-
-
-    const resultado =
-      await criarAgendamento({
-        data,
-        horario,
-        telefone,
-        conversationSpaceId,
-        callReason
-      });
-
-
-    console.log(
-      "RESULTADO /API/AGENDAR:",
-      JSON.stringify(
-        resultado,
-        null,
-        2
-      )
-    );
-
+    // ==========================================================
+    // AGENDAMENTO
+    // ==========================================================
 
     if (
-      resultado.ok
+      intencao ===
+      "AGENDAR"
     ) {
       console.log(
-        "===== AGENDAMENTO CRIADO COM SUCESSO ====="
+        "Fluxo escolhido: AGENDAMENTO"
       );
-    } else {
+
+
+      const horario =
+        extrairHorario(
+          callReason
+        );
+
+
+      const data =
+        extrairData(
+          callReason,
+          relatorio?.callCreated
+        );
+
+
       console.log(
-        "===== ERRO AO CRIAR AGENDAMENTO ====="
+        "DADOS EXTRAÍDOS:",
+        JSON.stringify(
+          {
+            data,
+            horario,
+            telefone,
+            callReason
+          },
+          null,
+          2
+        )
       );
+
+
+      if (
+        !data ||
+        !horario
+      ) {
+        console.log(
+          "AGENDAMENTO NÃO CRIADO."
+        );
+
+        console.log(
+          "Motivo: data ou horário não identificado."
+        );
+
+        return;
+      }
+
+
+      const resultado =
+        await chamarApiInterna(
+          URL_AGENDAR,
+          {
+            data,
+
+            horario,
+
+            nome:
+              telefone
+                ? `Telefone ${telefone}`
+                : "Cliente GoTo",
+
+            telefone,
+
+            conversationSpaceId,
+
+            origem:
+              "GoTo IA Recepcionista",
+
+            callReason
+          }
+        );
+
+
+      console.log(
+        "RESULTADO /API/AGENDAR:",
+        JSON.stringify(
+          resultado,
+          null,
+          2
+        )
+      );
+
+
+      if (
+        resultado.ok
+      ) {
+        console.log(
+          "===== AGENDAMENTO PROCESSADO COM SUCESSO ====="
+        );
+      } else {
+        console.log(
+          "===== AGENDAMENTO NÃO CONCLUÍDO ====="
+        );
+      }
+
+
+      return;
     }
+
+
+    // ==========================================================
+    // DESCONHECIDA
+    // ==========================================================
+
+    console.log(
+      "Nenhuma automação executada."
+    );
+
+    console.log(
+      "Intenção não reconhecida:",
+      callReason
+    );
 
   } catch (error) {
     console.error(
-      "ERRO NO PROCESSAMENTO DO AGENDAMENTO:",
+      "ERRO NO PROCESSAMENTO DA CHAMADA:",
       error
     );
 
@@ -1456,7 +1521,7 @@ async function processarChamada(
 
 
     console.log(
-      "===== FIM PROCESSAMENTO AGENDAMENTO ====="
+      "===== FIM PROCESSAMENTO GOTO ====="
     );
   }
 }
@@ -1505,7 +1570,7 @@ module.exports =
 
 
       // --------------------------------------------------------
-      // TESTE MANUAL
+      // GET
       // --------------------------------------------------------
 
       if (
@@ -1522,16 +1587,19 @@ module.exports =
               "Webhook GoTo ativo",
 
             mode:
-              "agendamento-real",
-
-            source:
-              "callStates.participants.status.outcome.callReason",
+              "agendar-cancelar",
 
             background:
               true,
 
-            scheduling:
-              true
+            agendamento:
+              true,
+
+            cancelamento:
+              true,
+
+            reagendamento:
+              false
           });
       }
 
@@ -1726,7 +1794,7 @@ module.exports =
 
 
       // --------------------------------------------------------
-      // SEM CONVERSATION SPACE ID
+      // SEM CONVERSATION ID
       // --------------------------------------------------------
 
       if (
@@ -1751,7 +1819,7 @@ module.exports =
 
 
       // --------------------------------------------------------
-      // PROCESSA EM BACKGROUND
+      // BACKGROUND
       // --------------------------------------------------------
 
       console.log(
@@ -1768,7 +1836,7 @@ module.exports =
 
 
       // --------------------------------------------------------
-      // RESPONDE IMEDIATAMENTE AO GOTO
+      // RESPONDE AO GOTO
       // --------------------------------------------------------
 
       return res
@@ -1781,9 +1849,6 @@ module.exports =
             true,
 
           background:
-            true,
-
-          scheduling:
             true,
 
           conversationSpaceId
