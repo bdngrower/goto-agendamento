@@ -9,7 +9,7 @@ const TIMEZONE = "America/Sao_Paulo";
 
 
 // ============================================================
-// MEMÓRIA LOCAL PARA REDUZIR PROCESSAMENTO DUPLICADO
+// PROTEÇÃO LOCAL CONTRA PROCESSAMENTO DUPLICADO
 // ============================================================
 
 const processando = new Set();
@@ -68,14 +68,13 @@ async function obterAccessTokenGoTo() {
           "application/json"
       },
 
-      body:
-        new URLSearchParams({
-          grant_type:
-            "refresh_token",
+      body: new URLSearchParams({
+        grant_type:
+          "refresh_token",
 
-          refresh_token:
-            refreshToken
-        })
+        refresh_token:
+          refreshToken
+      })
     }
   );
 
@@ -181,7 +180,7 @@ async function consultarRelatorio(
 
 
 // ============================================================
-// ESPERA REPORT FICAR COMPLETO
+// AGUARDA O REPORT CONTER INFO_CAPTURE
 // ============================================================
 
 async function obterRelatorioCompleto(
@@ -189,28 +188,30 @@ async function obterRelatorioCompleto(
   accessToken
 ) {
   /*
-   * Agora o processamento ocorre fora da resposta
-   * principal do webhook.
+   * Não dependemos mais de callReason.
    *
-   * Podemos aguardar por mais tempo sem deixar
-   * o GoTo esperando HTTP 200.
+   * Os testes mostraram que:
+   *
+   * - INFO_CAPTURE aparece;
+   * - callReason pode continuar undefined
+   *   indefinidamente.
+   *
+   * Portanto o critério agora é:
+   *
+   * INFO_CAPTURE do nosso formulário encontrado.
    */
 
-  const maxTentativas = 20;
-  const intervaloMs = 3000;
+  const maxTentativas = 10;
+  const intervaloMs = 2000;
 
   let ultimoRelatorio = null;
 
   console.log(
-    "Aguardando enriquecimento do Call Events Report..."
+    "Aguardando INFO_CAPTURE no Call Events Report..."
   );
 
-  /*
-   * Pequeno atraso inicial.
-   * Nos testes anteriores o ENDING chegou antes
-   * do callReason.
-   */
-  await esperar(3000);
+  // Pequeno atraso inicial para o GoTo terminar o pós-processamento.
+  await esperar(2000);
 
   for (
     let tentativa = 1;
@@ -227,9 +228,10 @@ async function obterRelatorioCompleto(
         accessToken
       );
 
-    // ----------------------------------------------------------
-    // 404 = ainda não existe
-    // ----------------------------------------------------------
+
+    // ==========================================================
+    // 404
+    // ==========================================================
 
     if (
       resultado.status === 404
@@ -255,9 +257,9 @@ async function obterRelatorioCompleto(
     }
 
 
-    // ----------------------------------------------------------
-    // OUTRO ERRO
-    // ----------------------------------------------------------
+    // ==========================================================
+    // OUTROS ERROS
+    // ==========================================================
 
     if (!resultado.ok) {
       throw new Error(
@@ -273,15 +275,12 @@ async function obterRelatorioCompleto(
       relatorio;
 
 
-    const callReason =
-      typeof relatorio?.callReason ===
-        "string"
-        ? relatorio.callReason.trim()
-        : "";
-
-
-    const temCallReason =
-      callReason.length > 0;
+    const actions =
+      Array.isArray(
+        relatorio?.actions
+      )
+        ? relatorio.actions
+        : [];
 
 
     const temInfoCapture =
@@ -290,43 +289,37 @@ async function obterRelatorioCompleto(
       );
 
 
+    const callReason =
+      typeof relatorio?.callReason ===
+        "string"
+        ? relatorio.callReason
+        : null;
+
+
     console.log(
       "Estado do Report:",
       JSON.stringify({
         tentativa,
 
-        callReason:
-          temCallReason,
-
         infoCapture:
           temInfoCapture,
 
         quantidadeActions:
-          Array.isArray(
-            relatorio?.actions
-          )
-            ? relatorio.actions.length
-            : 0
+          actions.length,
+
+        callReason:
+          !!callReason
       })
     );
 
 
-    /*
-     * Nos nossos testes:
-     *
-     * INFO_CAPTURE aparece antes.
-     * callReason aparece depois.
-     *
-     * Quando temos os dois,
-     * consideramos pronto.
-     */
+    // ==========================================================
+    // INFO_CAPTURE ENCONTRADO
+    // ==========================================================
 
-    if (
-      temCallReason &&
-      temInfoCapture
-    ) {
+    if (temInfoCapture) {
       console.log(
-        "Call Events Report completo."
+        "INFO_CAPTURE encontrado. Report pronto para análise."
       );
 
       return relatorio;
@@ -338,7 +331,7 @@ async function obterRelatorioCompleto(
       maxTentativas
     ) {
       console.log(
-        "Report ainda incompleto. Aguardando..."
+        "INFO_CAPTURE ainda não apareceu. Aguardando..."
       );
 
       await esperar(
@@ -349,7 +342,7 @@ async function obterRelatorioCompleto(
 
 
   console.log(
-    "Report não ficou completo dentro do período."
+    "Limite atingido. Usando último Report disponível."
   );
 
   return ultimoRelatorio;
@@ -464,24 +457,17 @@ function numeroPorExtenso(texto) {
 
     dezoito: 18,
     dezenove: 19,
-    vinte: 20,
-
-    vinteum: 21,
-    vintedois: 22,
-    vintetres: 23
+    vinte: 20
   };
 
   return mapa[
-    normalizado.replace(
-      /\s+e\s+/g,
-      ""
-    )
+    normalizado
   ];
 }
 
 
 // ============================================================
-// EXTRAI HORÁRIO
+// EXTRAI HORÁRIO DOS TEXTOS
 // ============================================================
 
 function extrairHorario(
@@ -495,9 +481,9 @@ function extrairHorario(
       textoOriginal.toLowerCase();
 
 
-    // ----------------------------------------------------------
+    // ==========================================================
     // 14:45
-    // ----------------------------------------------------------
+    // ==========================================================
 
     let match =
       texto.match(
@@ -518,10 +504,9 @@ function extrairHorario(
     }
 
 
-    // ----------------------------------------------------------
-    // 14h45
-    // 14 h 45
-    // ----------------------------------------------------------
+    // ==========================================================
+    // 14h45 / 14 h 45
+    // ==========================================================
 
     match =
       texto.match(
@@ -542,9 +527,9 @@ function extrairHorario(
     }
 
 
-    // ----------------------------------------------------------
+    // ==========================================================
     // 14h
-    // ----------------------------------------------------------
+    // ==========================================================
 
     match =
       texto.match(
@@ -564,10 +549,9 @@ function extrairHorario(
     }
 
 
-    // ----------------------------------------------------------
-    // às 17 horas
-    // às 17
-    // ----------------------------------------------------------
+    // ==========================================================
+    // às 17 horas / às 17
+    // ==========================================================
 
     match =
       texto.match(
@@ -587,9 +571,9 @@ function extrairHorario(
     }
 
 
-    // ----------------------------------------------------------
-    // dez e meia
-    // ----------------------------------------------------------
+    // ==========================================================
+    // às dez e meia
+    // ==========================================================
 
     match =
       texto.match(
@@ -622,9 +606,9 @@ function extrairHorario(
     }
 
 
-    // ----------------------------------------------------------
-    // quatorze horas
-    // ----------------------------------------------------------
+    // ==========================================================
+    // às quatorze horas
+    // ==========================================================
 
     match =
       texto.match(
@@ -727,9 +711,9 @@ function extrairData(
   textos,
   callCreated
 ) {
-  // ------------------------------------------------------------
+  // ============================================================
   // DATA ESCRITA
-  // ------------------------------------------------------------
+  // ============================================================
 
   for (
     const textoOriginal
@@ -808,9 +792,9 @@ function extrairData(
   }
 
 
-  // ------------------------------------------------------------
+  // ============================================================
   // AMANHÃ
-  // ------------------------------------------------------------
+  // ============================================================
 
   const temAmanha =
     textos.some(
@@ -882,9 +866,9 @@ function extrairData(
   }
 
 
-  // ------------------------------------------------------------
+  // ============================================================
   // HOJE
-  // ------------------------------------------------------------
+  // ============================================================
 
   const temHoje =
     textos.some(
@@ -1032,19 +1016,12 @@ async function criarAgendamento({
 
 
 // ============================================================
-// PROCESSAMENTO DA CHAMADA EM BACKGROUND
+// PROCESSAMENTO DA CHAMADA
 // ============================================================
 
 async function processarChamada(
   conversationSpaceId
 ) {
-  /*
-   * Essa proteção é somente local.
-   *
-   * Para produção/multi-instância vamos trocar
-   * por Supabase/Redis/idempotência persistente.
-   */
-
   if (
     processando.has(
       conversationSpaceId
@@ -1075,17 +1052,17 @@ async function processarChamada(
     );
 
 
-    // ----------------------------------------------------------
-    // TOKEN
-    // ----------------------------------------------------------
+    // ==========================================================
+    // TOKEN GOTO
+    // ==========================================================
 
     const accessToken =
       await obterAccessTokenGoTo();
 
 
-    // ----------------------------------------------------------
-    // REPORT
-    // ----------------------------------------------------------
+    // ==========================================================
+    // RELATÓRIO
+    // ==========================================================
 
     const relatorio =
       await obterRelatorioCompleto(
@@ -1103,6 +1080,115 @@ async function processarChamada(
     }
 
 
+    // ==========================================================
+    // ACTIONS COMPLETAS
+    // ==========================================================
+
+    const actions =
+      Array.isArray(
+        relatorio?.actions
+      )
+        ? relatorio.actions
+        : [];
+
+
+    console.log(
+      "=========================================="
+    );
+
+    console.log(
+      "ACTIONS COMPLETAS:"
+    );
+
+    console.log(
+      JSON.stringify(
+        actions,
+        null,
+        2
+      )
+    );
+
+    console.log(
+      "=========================================="
+    );
+
+
+    // ==========================================================
+    // INFO_CAPTURE COMPLETO
+    // ==========================================================
+
+    const infoCaptures =
+      actions.filter(
+        (action) =>
+          action
+            ?.type
+            ?.value ===
+          "INFO_CAPTURE"
+      );
+
+
+    console.log(
+      "=========================================="
+    );
+
+    console.log(
+      "INFO_CAPTURE COMPLETO:"
+    );
+
+    console.log(
+      JSON.stringify(
+        infoCaptures,
+        null,
+        2
+      )
+    );
+
+    console.log(
+      "=========================================="
+    );
+
+
+    // ==========================================================
+    // FORMULÁRIO ESPECÍFICO
+    // ==========================================================
+
+    const infoCaptureAgendamento =
+      infoCaptures.find(
+        (action) =>
+          action
+            ?.type
+            ?.form
+            ?.name ===
+          FORMULARIO_AGENDAMENTO
+      );
+
+
+    console.log(
+      "=========================================="
+    );
+
+    console.log(
+      "INFO_CAPTURE AGENDAMENTO:"
+    );
+
+    console.log(
+      JSON.stringify(
+        infoCaptureAgendamento ||
+        null,
+        null,
+        2
+      )
+    );
+
+    console.log(
+      "=========================================="
+    );
+
+
+    // ==========================================================
+    // CALL REASON
+    // ==========================================================
+
     console.log(
       "Call Reason final:",
       relatorio?.callReason ||
@@ -1110,9 +1196,9 @@ async function processarChamada(
     );
 
 
-    // ----------------------------------------------------------
-    // CONFIRMA FORMULÁRIO
-    // ----------------------------------------------------------
+    // ==========================================================
+    // CONFIRMA INFO_CAPTURE
+    // ==========================================================
 
     const possuiCaptura =
       possuiCapturaAgendamento(
@@ -1129,9 +1215,9 @@ async function processarChamada(
     }
 
 
-    // ----------------------------------------------------------
-    // TEXTOS
-    // ----------------------------------------------------------
+    // ==========================================================
+    // TEXTOS PARA EXTRAÇÃO
+    // ==========================================================
 
     const textos =
       obterTextosDaInteracao(
@@ -1149,15 +1235,19 @@ async function processarChamada(
     );
 
 
-    // ----------------------------------------------------------
-    // EXTRAI
-    // ----------------------------------------------------------
+    // ==========================================================
+    // EXTRAI HORÁRIO
+    // ==========================================================
 
     const horario =
       extrairHorario(
         textos
       );
 
+
+    // ==========================================================
+    // EXTRAI DATA
+    // ==========================================================
 
     const data =
       extrairData(
@@ -1166,11 +1256,19 @@ async function processarChamada(
       );
 
 
+    // ==========================================================
+    // TELEFONE
+    // ==========================================================
+
     const telefone =
       obterTelefone(
         relatorio
       );
 
+
+    // ==========================================================
+    // RESULTADO DA EXTRAÇÃO
+    // ==========================================================
 
     console.log(
       "DADOS EXTRAÍDOS:",
@@ -1191,9 +1289,9 @@ async function processarChamada(
     );
 
 
-    // ----------------------------------------------------------
+    // ==========================================================
     // SEGURANÇA
-    // ----------------------------------------------------------
+    // ==========================================================
 
     if (
       !data ||
@@ -1203,13 +1301,17 @@ async function processarChamada(
         "AGENDAMENTO NÃO CRIADO: data ou horário não identificado."
       );
 
+      console.log(
+        "Precisamos analisar INFO_CAPTURE COMPLETO acima."
+      );
+
       return;
     }
 
 
-    // ----------------------------------------------------------
-    // AGENDAR
-    // ----------------------------------------------------------
+    // ==========================================================
+    // CRIA AGENDAMENTO
+    // ==========================================================
 
     const resultado =
       await criarAgendamento({
@@ -1270,9 +1372,9 @@ module.exports =
     res
   ) {
     try {
-      // --------------------------------------------------------
+      // ========================================================
       // OPTIONS
-      // --------------------------------------------------------
+      // ========================================================
 
       if (
         req.method ===
@@ -1299,9 +1401,9 @@ module.exports =
       }
 
 
-      // --------------------------------------------------------
-      // TESTE
-      // --------------------------------------------------------
+      // ========================================================
+      // GET TESTE
+      // ========================================================
 
       if (
         req.method ===
@@ -1319,15 +1421,18 @@ module.exports =
             automation:
               "Agendamento automático em background habilitado",
 
+            diagnostic:
+              "INFO_CAPTURE completo habilitado",
+
             background:
               true
           });
       }
 
 
-      // --------------------------------------------------------
+      // ========================================================
       // SOMENTE POST
-      // --------------------------------------------------------
+      // ========================================================
 
       if (
         req.method !==
@@ -1349,9 +1454,9 @@ module.exports =
         req.body;
 
 
-      // --------------------------------------------------------
+      // ========================================================
       // VALIDATION CODE
-      // --------------------------------------------------------
+      // ========================================================
 
       const validationCode =
         Array.isArray(
@@ -1361,6 +1466,7 @@ module.exports =
               ?.[0]
               ?.data
               ?.validationCode
+
           : payload
               ?.data
               ?.validationCode;
@@ -1378,9 +1484,9 @@ module.exports =
       }
 
 
-      // --------------------------------------------------------
+      // ========================================================
       // POST VAZIO
-      // --------------------------------------------------------
+      // ========================================================
 
       if (
         !payload ||
@@ -1403,9 +1509,9 @@ module.exports =
       }
 
 
-      // --------------------------------------------------------
-      // EVENTO
-      // --------------------------------------------------------
+      // ========================================================
+      // NORMALIZA EVENTO
+      // ========================================================
 
       const evento =
         Array.isArray(
@@ -1438,6 +1544,10 @@ module.exports =
           ?.accountKey;
 
 
+      // ========================================================
+      // LOG RESUMIDO
+      // ========================================================
+
       console.log(
         "GOTO EVENT:",
         JSON.stringify({
@@ -1460,9 +1570,9 @@ module.exports =
       );
 
 
-      // --------------------------------------------------------
-      // CONTA DEMO
-      // --------------------------------------------------------
+      // ========================================================
+      // SOMENTE CONTA DEMO
+      // ========================================================
 
       if (
         accountKey &&
@@ -1484,9 +1594,9 @@ module.exports =
       }
 
 
-      // --------------------------------------------------------
-      // NÃO É ENDING
-      // --------------------------------------------------------
+      // ========================================================
+      // SOMENTE ENDING
+      // ========================================================
 
       if (
         state?.type !==
@@ -1511,9 +1621,9 @@ module.exports =
       }
 
 
-      // --------------------------------------------------------
-      // SEM ID
-      // --------------------------------------------------------
+      // ========================================================
+      // SEM CONVERSATION ID
+      // ========================================================
 
       if (
         !conversationSpaceId
@@ -1536,9 +1646,9 @@ module.exports =
       }
 
 
-      // --------------------------------------------------------
-      // BACKGROUND
-      // --------------------------------------------------------
+      // ========================================================
+      // PROCESSAMENTO BACKGROUND
+      // ========================================================
 
       console.log(
         "Disparando processamento background:",
@@ -1553,11 +1663,10 @@ module.exports =
       );
 
 
-      /*
-       * Responde imediatamente ao GoTo.
-       *
-       * O processamento continua através de waitUntil.
-       */
+      // ========================================================
+      // RESPONDE IMEDIATAMENTE
+      // ========================================================
+
       return res
         .status(200)
         .json({
