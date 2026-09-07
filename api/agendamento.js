@@ -1427,7 +1427,7 @@ async function acaoReagendar({
   accessToken,
   dados
 }) {
-  const eventoId =
+  let eventoId =
     dados.eventoId ||
     dados.evento_id;
 
