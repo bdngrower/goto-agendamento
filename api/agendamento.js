@@ -408,7 +408,7 @@ async function consultarCalendarView({
   inicio,
   fim,
   select =
-    "id,subject,start,end,isAllDay,bodyPreview,webLink"
+    "id,subject,start,end,isAllDay,bodyPreview,body,webLink"
 }) {
   const url =
     `https://graph.microsoft.com/v1.0/users/${MAILBOX_ID}` +
@@ -669,44 +669,62 @@ async function acaoConsultarDisponibilidade({
 
 
 // ============================================================
-// LOCALIZA EVENTOS PELO TELEFONE
+// LOCALIZA EVENTOS PELO CPF OU TELEFONE
 // ============================================================
 
-function localizarEventosTelefone(
+function localizarEventosCpfTelefone(
   eventos,
-  telefone
+  cpfEsperado,
+  telefoneEsperado
 ) {
-  const numero =
-    normalizarTelefone(
-      telefone
-    );
+  const numTelEsperado = normalizarTelefone(telefoneEsperado);
+  const numCpfEsperado = normalizarTelefone(cpfEsperado); // removes non-digits
 
-  if (!numero) {
+  if (!numTelEsperado && !numCpfEsperado) {
     return [];
   }
 
-  return eventos.filter(
-    (evento) => {
-      const assunto =
-        normalizarTelefone(
-          evento?.subject
-        );
-
-      const corpo =
-        normalizarTelefone(
-          evento?.bodyPreview
-        );
-
-      return (
-        assunto.includes(
-          numero
-        ) ||
-        corpo.includes(
-          numero
-        )
-      );
+  return eventos.filter((evento) => {
+    let matches = false;
+    
+    // Check subject
+    const assuntoStr = String(evento?.subject || "");
+    const subjectDigits = normalizarTelefone(assuntoStr);
+    
+    if (numTelEsperado && subjectDigits.includes(numTelEsperado)) matches = true;
+    if (numCpfEsperado && subjectDigits.includes(numCpfEsperado)) matches = true;
+    
+    // Check body content robustly
+    const bodyContent = String(evento?.body?.content || evento?.bodyPreview || "");
+    
+    // Check for explicit "Telefone: +5511999999999" format
+    if (numTelEsperado) {
+      const phoneMatch = bodyContent.match(/Telefone:\s*([+\d\s.-]+)/i);
+      if (phoneMatch) {
+        const phoneFound = normalizarTelefone(phoneMatch[1]);
+        if (phoneFound.includes(numTelEsperado) || numTelEsperado.includes(phoneFound)) {
+          matches = true;
+        }
+      } else if (normalizarTelefone(bodyContent).includes(numTelEsperado)) {
+         matches = true;
+      }
     }
-  );
+    
+    // Check for explicit "CPF: 123.456.789-00" format
+    if (numCpfEsperado) {
+      const cpfMatch = bodyContent.match(/CPF:\s*([\d\s.-]+)/i);
+      if (cpfMatch) {
+        const cpfFound = normalizarTelefone(cpfMatch[1]);
+        if (cpfFound === numCpfEsperado) {
+          matches = true;
+        }
+      } else if (normalizarTelefone(bodyContent).includes(numCpfEsperado)) {
+         matches = true;
+      }
+    }
+
+    return matches;
+  });
 }
 
 
@@ -720,15 +738,17 @@ async function acaoConsultarAgendamentos({
 }) {
   const telefone =
     dados.telefone;
+  const cpf =
+    dados.cpf;
 
-  if (!telefone) {
+  if (!telefone && !cpf) {
     return {
       status: 400,
 
       body: {
         success: false,
         error:
-          "Telefone não informado"
+          "CPF ou Telefone não informado"
       }
     };
   }
@@ -754,8 +774,9 @@ async function acaoConsultarAgendamentos({
     });
 
   const encontrados =
-    localizarEventosTelefone(
+    localizarEventosCpfTelefone(
       eventos,
+      cpf,
       telefone
     );
 
@@ -1201,30 +1222,52 @@ async function acaoCancelar({
   const telefone =
     dados.telefone ||
     "";
+    
+  const cpf =
+    dados.cpf ||
+    "";
+    
+  let dataFiltro = dados.data || "";
+  if (dataFiltro) {
+    const dMatch = dataFiltro.match(/(\d{4}-\d{2}-\d{2})/);
+    if (dMatch) dataFiltro = dMatch[1];
+  }
+  
+  let horarioFiltro = dados.horario || "";
+  if (horarioFiltro) {
+    const hMatch = horarioFiltro.match(/(\d{2}:\d{2})/);
+    if (hMatch) horarioFiltro = hMatch[1];
+  }
 
   // ----------------------------------------------------------
   // FALLBACK:
-  // SE NÃO RECEBER EVENTO ID, TENTA LOCALIZAR PELO TELEFONE.
-  // SÓ CANCELA SE HOUVER UM ÚNICO.
+  // SE NÃO RECEBER EVENTO ID, TENTA LOCALIZAR PELO CPF/TELEFONE.
+  // SÓ CANCELA SE HOUVER UM ÚNICO (ou um único exato com data/hora).
   // ----------------------------------------------------------
 
   if (
     !eventoId &&
-    telefone
+    (telefone || cpf)
   ) {
     const consulta =
       await acaoConsultarAgendamentos({
         accessToken,
         dados: {
-          telefone
+          telefone,
+          cpf
         }
       });
 
-    const agendamentos =
+    let agendamentos =
       consulta
         .body
         ?.agendamentos ||
       [];
+      
+    // Se a IA passou a data e o horário, filtramos a lista
+    if (dataFiltro && horarioFiltro && agendamentos.length > 0) {
+      agendamentos = agendamentos.filter(a => a.data === dataFiltro && a.horario === horarioFiltro);
+    }
 
     if (
       agendamentos.length === 0
@@ -1398,6 +1441,75 @@ async function acaoReagendar({
     dados.novoHorario ||
     dados.novo_horario;
 
+  const cpf =
+    dados.cpf ||
+    "";
+    
+  const telefone =
+    dados.telefone ||
+    "";
+    
+  let dataFiltro = dados.dataAnterior || dados.data_anterior || "";
+  if (dataFiltro) {
+    const dMatch = dataFiltro.match(/(\d{4}-\d{2}-\d{2})/);
+    if (dMatch) dataFiltro = dMatch[1];
+  }
+  
+  let horarioFiltro = dados.horarioAnterior || dados.horario_anterior || "";
+  if (horarioFiltro) {
+    const hMatch = horarioFiltro.match(/(\d{2}:\d{2})/);
+    if (hMatch) horarioFiltro = hMatch[1];
+  }
+
+  if (
+    !eventoId &&
+    (telefone || cpf)
+  ) {
+    const consulta =
+      await acaoConsultarAgendamentos({
+        accessToken,
+        dados: {
+          telefone,
+          cpf
+        }
+      });
+
+    let agendamentos =
+      consulta
+        .body
+        ?.agendamentos ||
+      [];
+      
+    if (dataFiltro && horarioFiltro && agendamentos.length > 0) {
+      agendamentos = agendamentos.filter(a => a.data === dataFiltro && a.horario === horarioFiltro);
+    }
+    
+    if (agendamentos.length === 0) {
+       return {
+         status: 404,
+         body: {
+           success: false,
+           error: "Agendamento original não encontrado",
+           mensagem: "Não encontrei o agendamento original que você deseja reagendar."
+         }
+       };
+    }
+    
+    if (agendamentos.length > 1) {
+       return {
+         status: 409,
+         body: {
+           success: false,
+           ambiguo: true,
+           quantidade: agendamentos.length,
+           mensagem: consulta.body.mensagem
+         }
+       };
+    }
+    
+    eventoId = agendamentos[0].id;
+  }
+
   if (!eventoId) {
     return {
       status: 400,
@@ -1406,7 +1518,7 @@ async function acaoReagendar({
         success: false,
 
         error:
-          "eventoId não informado"
+          "eventoId não informado e busca por CPF/Telefone falhou"
       }
     };
   }
@@ -1494,6 +1606,19 @@ async function acaoReagendar({
       .fim
       .dateTime;
 
+  const partesData = data.split("-");
+  const dataExibicao = partesData.length === 3 ? `${partesData[2]}/${partesData[1]}/${partesData[0]}` : data;
+
+  const bodyContentRegex = /Data:\s*[\d/]+\r?\nHorário:\s*\d{2}:\d{2}/i;
+  const novoBodyText = `Data: ${dataExibicao}\nHorário: ${horario}`;
+
+  let novoBodyContent = eventoAtual.body?.content || "";
+  if (bodyContentRegex.test(novoBodyContent)) {
+    novoBodyContent = novoBodyContent.replace(bodyContentRegex, novoBodyText);
+  } else {
+    novoBodyContent += `\n\n[REAGENDADO] Nova Data: ${dataExibicao} - Novo Horário: ${horario}`;
+  }
+
   const patch = {
     start: {
       dateTime:
@@ -1509,6 +1634,11 @@ async function acaoReagendar({
 
       timeZone:
         GRAPH_TIMEZONE
+    },
+    
+    body: {
+      contentType: "Text",
+      content: novoBodyContent
     }
   };
 
