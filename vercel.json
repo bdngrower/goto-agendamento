@@ -1,16 +1,7 @@
 {
   "version": 2,
   "rewrites": [
-    { "source": "/admin", "destination": "/public/admin/index.html" },
-    { "source": "/admin/(.*)", "destination": "/public/admin/index.html" },
-    { "source": "/api/admin/m365/callback", "destination": "/api/admin/m365/callback.js" },
-    { "source": "/api/admin/empresas/:id/m365/:action", "destination": "/api/admin/empresas/[id]/m365.js?id=:id&action=:action" },
-    { "source": "/api/admin/empresas/:id/m365", "destination": "/api/admin/empresas/[id]/m365.js?id=:id" },
-    { "source": "/api/admin/empresas/:id/testar-m365", "destination": "/api/admin/empresas/[id]/testar-m365.js?id=:id" },
-    { "source": "/api/admin/empresas/:id/horarios", "destination": "/api/admin/empresas/[id]/horarios.js?id=:id" },
-    { "source": "/api/admin/empresas/:id/excecoes", "destination": "/api/admin/empresas/[id]/excecoes.js?id=:id" },
-    { "source": "/api/admin/empresas/:id/chaves-goto", "destination": "/api/admin/empresas/[id]/chaves-goto.js?id=:id" },
-    { "source": "/api/admin/empresas/:id/previa-disponibilidade", "destination": "/api/admin/empresas/[id]/previa-disponibilidade.js?id=:id" },
-    { "source": "/api/admin/empresas/:id", "destination": "/api/admin/empresas/[id]/index.js?id=:id" }
+    { "source": "/admin", "destination": "/admin/index.html" },
+    { "source": "/admin/(.*)", "destination": "/admin/index.html" }
   ]
 }
