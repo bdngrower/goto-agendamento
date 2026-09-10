@@ -1,0 +1,2117 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel Administrativo | GoTo Agendamento Multiempresa</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #07090e;
+      --bg-surface: #0e131f;
+      --bg-card: rgba(16, 23, 38, 0.85);
+      --bg-card-hover: rgba(24, 34, 56, 0.95);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-focus: #6366f1;
+      --primary: #6366f1;
+      --primary-hover: #4f46e5;
+      --primary-glow: rgba(99, 102, 241, 0.35);
+      --accent: #06b6d4;
+      --accent-glow: rgba(6, 182, 212, 0.25);
+      --success: #10b981;
+      --success-glow: rgba(16, 185, 129, 0.2);
+      --danger: #ef4444;
+      --danger-glow: rgba(239, 68, 68, 0.2);
+      --warning: #f59e0b;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-subtle: #64748b;
+      --radius: 12px;
+      --radius-sm: 8px;
+      --shadow-card: 0 10px 30px -10px rgba(0, 0, 0, 0.6);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: radial-gradient(circle at 50% 0%, #17213d 0%, var(--bg-dark) 80%);
+      color: var(--text-main);
+      min-height: 100vh;
+      line-height: 1.5;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .container {
+      max-width: 1300px;
+      margin: 0 auto;
+      padding: 24px;
+      width: 100%;
+      flex: 1;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 28px;
+    }
+    .logo-area { display: flex; align-items: center; gap: 14px; cursor: pointer; }
+    .logo-icon {
+      width: 44px; height: 44px; border-radius: 10px;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; color: #fff; font-size: 22px;
+      box-shadow: 0 4px 16px var(--primary-glow);
+    }
+    .logo-text h1 { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; }
+    .logo-text p { font-size: 0.8rem; color: var(--text-muted); }
+    .user-actions { display: flex; align-items: center; gap: 16px; }
+    .user-badge {
+      display: flex; align-items: center; gap: 8px; font-size: 0.85rem;
+      background: rgba(255,255,255,0.04); padding: 6px 14px; border-radius: 20px;
+      border: 1px solid var(--border);
+    }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); box-shadow: 0 0 8px var(--success); }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 9px 18px; border-radius: var(--radius-sm); font-size: 0.875rem;
+      font-weight: 500; cursor: pointer; transition: all 0.2s ease; border: none; outline: none;
+    }
+    .btn-primary {
+      background: var(--primary); color: #fff;
+      box-shadow: 0 4px 14px var(--primary-glow);
+    }
+    .btn-primary:hover:not(:disabled) { background: var(--primary-hover); transform: translateY(-1px); }
+    .btn-outline {
+      background: transparent; color: var(--text-main); border: 1px solid var(--border);
+    }
+    .btn-outline:hover:not(:disabled) { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.25); }
+    .btn-success { background: var(--success); color: #fff; box-shadow: 0 4px 14px var(--success-glow); }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-danger:hover:not(:disabled) { background: #dc2626; }
+    .btn-sm { padding: 6px 12px; font-size: 0.8rem; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
+
+    /* Forms */
+    .form-group { margin-bottom: 18px; }
+    label { display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 6px; color: #cbd5e1; }
+    .form-desc { font-size: 0.78rem; color: var(--text-muted); margin-top: 4px; }
+    input, select, textarea {
+      width: 100%; padding: 10px 14px; background: rgba(5, 8, 15, 0.6);
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      color: var(--text-main); font-size: 0.9rem; font-family: inherit;
+      transition: all 0.2s;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--border-focus); outline: none; box-shadow: 0 0 0 3px var(--primary-glow);
+      background: rgba(5, 8, 15, 0.85);
+    }
+    input::placeholder { color: var(--text-subtle); }
+
+    /* Login View */
+    #view-login {
+      max-width: 440px; margin: 80px auto; padding: 40px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius); backdrop-filter: blur(16px);
+      box-shadow: var(--shadow-card);
+    }
+
+    /* Top Metrics Overview */
+    .metrics-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 28px;
+    }
+    .metric-card {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 18px 22px; backdrop-filter: blur(12px);
+    }
+    .metric-label { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .metric-value { font-size: 1.8rem; font-weight: 700; margin-top: 6px; }
+
+    /* Badges */
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 3px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 600;
+    }
+    .badge-success { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-danger { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+    .badge-warning { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .badge-neutral { background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3); }
+
+    /* Dashboard Layout */
+    .dashboard-grid { display: grid; grid-template-columns: 290px 1fr; gap: 24px; }
+    .sidebar-card {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 18px; backdrop-filter: blur(12px); height: fit-content;
+    }
+    .sidebar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    .sidebar-title { font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+    .tenant-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+    .tenant-item {
+      padding: 12px 14px; border-radius: var(--radius-sm); cursor: pointer; transition: all 0.2s;
+      border: 1px solid transparent; display: flex; justify-content: space-between; align-items: center;
+    }
+    .tenant-item:hover { background: var(--bg-card-hover); border-color: var(--border); }
+    .tenant-item.active { background: rgba(99, 102, 241, 0.15); border-color: var(--primary); color: #fff; }
+    .tenant-name { font-weight: 600; font-size: 0.95rem; }
+    .tenant-slug { font-size: 0.75rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+
+    /* Navigation & Tabs */
+    .tabs-nav {
+      display: flex; gap: 8px; border-bottom: 1px solid var(--border);
+      margin-bottom: 24px; padding-bottom: 10px; overflow-x: auto;
+    }
+    .tab-btn {
+      padding: 9px 16px; background: transparent; border: none; color: var(--text-muted);
+      cursor: pointer; font-size: 0.88rem; font-weight: 500; border-radius: var(--radius-sm);
+      transition: all 0.2s; white-space: nowrap;
+    }
+    .tab-btn:hover { color: var(--text-main); background: rgba(255,255,255,0.04); }
+    .tab-btn.active { color: #fff; background: var(--primary); font-weight: 600; }
+
+    /* Content Cards */
+    .card {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 26px; backdrop-filter: blur(12px); margin-bottom: 24px; box-shadow: var(--shadow-card);
+    }
+    .card-header { margin-bottom: 20px; }
+    .card-title { font-size: 1.15rem; font-weight: 600; }
+    .card-desc { font-size: 0.85rem; color: var(--text-muted); margin-top: 4px; }
+
+    /* Tables */
+    .table-container { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th { text-align: left; padding: 12px 16px; background: rgba(0,0,0,0.3); color: var(--text-muted); font-weight: 600; border-bottom: 1px solid var(--border); }
+    td { padding: 13px 16px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+
+    /* Alerts */
+    .alert {
+      padding: 13px 16px; border-radius: var(--radius-sm); font-size: 0.86rem;
+      margin-bottom: 20px; display: flex; align-items: center; gap: 10px; line-height: 1.4;
+    }
+    .alert-success { background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399; }
+    .alert-danger { background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; }
+    .alert-warning { background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3); color: #fbbf24; }
+    .alert-info { background: rgba(6, 182, 212, 0.12); border: 1px solid rgba(6, 182, 212, 0.3); color: #38bdf8; }
+
+    /* Modals */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(8px);
+      display: flex; align-items: center; justify-content: center; z-index: 100;
+      animation: fadeIn 0.2s ease;
+    }
+    .modal-card {
+      background: #111726; border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 28px; width: 100%; max-width: 520px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8);
+      max-height: 90vh; overflow-y: auto;
+    }
+
+    /* Key Display */
+    .key-display {
+      background: rgba(0,0,0,0.6); padding: 14px 18px; border-radius: var(--radius-sm);
+      border: 1px dashed var(--accent); font-family: 'JetBrains Mono', monospace;
+      font-size: 0.88rem; color: #38bdf8; word-break: break-all; margin: 16px 0;
+      user-select: all;
+    }
+
+    /* Onboarding Checklist Box */
+    .checklist-card {
+      background: rgba(0,0,0,0.25); border: 1px solid var(--border); border-radius: var(--radius-sm);
+      padding: 16px; margin-bottom: 20px;
+    }
+    .checklist-title { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 12px; font-weight: 600; }
+    .checklist-item { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 0.86rem; }
+    .check-icon { font-size: 1rem; width: 20px; text-align: center; }
+
+    /* Schedule Day Box */
+    .day-row {
+      background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: var(--radius-sm);
+      padding: 16px; margin-bottom: 12px; transition: border-color 0.2s;
+    }
+    .day-row:hover { border-color: rgba(255,255,255,0.16); }
+    .day-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .day-title { font-weight: 600; font-size: 0.95rem; }
+    .day-options { display: flex; gap: 16px; align-items: center; }
+    .day-options label { margin-bottom: 0; font-weight: normal; font-size: 0.82rem; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+    .time-slot-list { display: flex; flex-direction: column; gap: 8px; }
+    .time-slot-row { display: flex; align-items: center; gap: 10px; }
+    .time-slot-row input[type="time"] { width: 120px; padding: 6px 10px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; }
+
+    .hidden { display: none !important; }
+
+    @keyframes fadeIn { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <!-- Header Global -->
+    <header>
+      <div class="logo-area" id="btn-header-home" title="Ir para o Dashboard Principal">
+        <div class="logo-icon">G</div>
+        <div class="logo-text">
+          <h1>GoTo Agendamento</h1>
+          <p>Painel Administrativo Multiempresa Enterprise</p>
+        </div>
+      </div>
+      <div class="user-actions" id="header-user-actions" style="display: none;">
+        <button class="btn btn-outline btn-sm" id="btn-nav-dashboard">📊 Dashboard</button>
+        <div class="user-badge">
+          <span class="status-dot"></span>
+          <span id="user-display-email">admin@empresa.com</span>
+        </div>
+        <button class="btn btn-outline btn-sm" id="btn-logout">Sair</button>
+      </div>
+    </header>
+
+    <!-- View: Login Administrativo -->
+    <div id="view-login">
+      <h2 style="margin-bottom: 8px; font-size: 1.35rem; font-weight: 700;">Acesso Administrativo</h2>
+      <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 24px;">Faça login com sua conta administrativa autorizada.</p>
+      <div id="login-alert" class="alert alert-danger hidden"></div>
+      <form id="form-login">
+        <div class="form-group">
+          <label for="login-email">E-mail corporativo</label>
+          <input type="email" id="login-email" required placeholder="admin@empresa.com" autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label for="login-senha">Senha de Acesso</label>
+          <input type="password" id="login-senha" required placeholder="••••••••••••" autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn btn-primary" id="btn-login-submit" style="width: 100%;">
+          <span>Entrar no Painel</span>
+        </button>
+      </form>
+    </div>
+
+    <!-- View: Visão Geral / Dashboard (Lista de Todas as Empresas) -->
+    <div id="view-overview" class="hidden">
+      <!-- Top Metrics -->
+      <div class="metrics-grid">
+        <div class="metric-card">
+          <div class="metric-label">Total de Empresas</div>
+          <div class="metric-value" id="metric-total-empresas">0</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Empresas Ativas</div>
+          <div class="metric-value" id="metric-empresas-ativas" style="color: var(--success);">0</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">M365 Conectados</div>
+          <div class="metric-value" id="metric-m365-conectados" style="color: var(--accent);">0</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Chaves GoTo Ativas</div>
+          <div class="metric-value" id="metric-chaves-ativas" style="color: #a855f7;">0</div>
+        </div>
+      </div>
+
+      <!-- Overview Card & Table -->
+      <div class="card">
+        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <h3 class="card-title">Empresas Cadastradas (Tenants)</h3>
+            <p class="card-desc">Visão consolidada de todas as organizações integradas ao GoTo Connect.</p>
+          </div>
+          <button class="btn btn-primary" id="btn-overview-nova-empresa">+ Cadastrar Empresa</button>
+        </div>
+
+        <div id="overview-alert" class="alert hidden"></div>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Empresa / Razão Social</th>
+                <th>Identificador (Slug)</th>
+                <th>Status</th>
+                <th>Microsoft 365 / Agenda</th>
+                <th>Chave GoTo</th>
+                <th style="text-align: right;">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="overview-table-body">
+              <!-- Renderizado dinamicamente -->
+            </tbody>
+          </table>
+        </div>
+        <div id="overview-empty-state" class="hidden" style="text-align: center; padding: 48px 16px; color: var(--text-muted);">
+          <p style="font-size: 1rem; font-weight: 500;">Nenhuma empresa cadastrada ainda.</p>
+          <p style="font-size: 0.85rem; margin-top: 6px;">Clique no botão acima para iniciar o onboarding do primeiro cliente.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- View: Configuração Detalhada da Empresa Selecionada -->
+    <div id="view-tenant-detail" class="dashboard-grid hidden">
+      <!-- Sidebar Empresas -->
+      <div class="sidebar-card">
+        <div class="sidebar-header">
+          <span class="sidebar-title">Empresas</span>
+          <button class="btn btn-primary btn-sm" id="btn-sidebar-nova-empresa">+ Nova</button>
+        </div>
+        <ul class="tenant-list" id="lista-tenants-sidebar">
+          <!-- Renderizado dinamicamente -->
+        </ul>
+      </div>
+
+      <!-- Área de Abas e Formulários -->
+      <div id="tenant-content-area">
+        <!-- Card de Título da Empresa -->
+        <div class="card" style="padding: 20px 24px; margin-bottom: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <h2 id="current-tenant-name" style="font-size: 1.35rem; font-weight: 700;">Selecione uma Empresa</h2>
+                <span id="current-tenant-badge"></span>
+              </div>
+              <p id="current-tenant-slug" style="color: var(--text-muted); font-size: 0.82rem; font-family: 'JetBrains Mono', monospace; margin-top: 4px;"></p>
+            </div>
+            <button class="btn btn-outline btn-sm" id="btn-voltar-overview">← Voltar ao Dashboard</button>
+          </div>
+        </div>
+
+        <!-- Abas de Navegação -->
+        <div class="tabs-nav">
+          <button class="tab-btn active" data-tab="tab-m365">Microsoft 365 / Agenda</button>
+          <button class="tab-btn" data-tab="tab-horarios">Horários de Atendimento</button>
+          <button class="tab-btn" data-tab="tab-politica">Políticas de Agendamento</button>
+          <button class="tab-btn" data-tab="tab-excecoes">Feriados & Exceções</button>
+          <button class="tab-btn" data-tab="tab-previa">Prévia de Disponibilidade</button>
+          <button class="tab-btn" data-tab="tab-chaves">Chave GoTo Connect</button>
+        </div>
+
+        <!-- 1. Aba Microsoft 365 / Agenda -->
+        <div class="tab-pane" id="tab-m365">
+          <div class="card">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+              <div>
+                <h3 class="card-title">Microsoft 365 / Agenda</h3>
+                <p class="card-desc">Integração oficial via App Registration multitenant da solução e Application RBAC no Exchange Online.</p>
+              </div>
+              <div id="m365-header-badge"></div>
+            </div>
+            <div id="m365-alert" class="alert hidden"></div>
+
+            <!-- Estado 1: Desconectado -->
+            <div id="m365-view-desconectado" class="hidden" style="text-align: center; padding: 40px 20px;">
+              <div style="width: 64px; height: 64px; margin: 0 auto 16px; border-radius: 16px; background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.25); display: flex; align-items: center; justify-content: center; font-size: 28px;">
+                ☁️
+              </div>
+              <h4 style="font-size: 1.15rem; font-weight: 600; margin-bottom: 8px;">Conexão Microsoft 365</h4>
+              <p style="color: var(--text-muted); font-size: 0.9rem; max-width: 520px; margin: 0 auto 24px; line-height: 1.5;">
+                Conecte uma organização Microsoft 365 para utilizar uma caixa de calendário nos agendamentos.
+              </p>
+              <button class="btn btn-primary" id="btn-conectar-m365" style="padding: 12px 28px; font-size: 0.95rem;">
+                <svg width="20" height="20" viewBox="0 0 23 23" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-right: 4px;">
+                  <path fill="#f35325" d="M1 1h10v10H1z"/>
+                  <path fill="#81bc06" d="M12 1h10v10H12z"/>
+                  <path fill="#05a6f0" d="M1 12h10v10H1z"/>
+                  <path fill="#ffba08" d="M12 12h10v10H12z"/>
+                </svg>
+                Conectar Microsoft 365
+              </button>
+            </div>
+
+            <!-- Estado 2: Conectado (Gestão da Mailbox e Testes) -->
+            <div id="m365-view-conectado" class="hidden">
+              <!-- Detalhes do Tenant Autorizado -->
+              <div style="background: rgba(0,0,0,0.25); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 18px; margin-bottom: 24px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                  <div>
+                    <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.05em; font-weight: 600;">Organização Microsoft 365 Conectada</div>
+                    <div id="m365-display-org" style="font-size: 1.05rem; font-weight: 600; color: #38bdf8; margin-top: 4px; font-family: 'JetBrains Mono', monospace;">-</div>
+                    <div id="m365-display-conectado-em" style="font-size: 0.78rem; color: var(--text-subtle); margin-top: 2px;"></div>
+                  </div>
+                  <button class="btn btn-outline btn-sm" id="btn-desconectar-m365" style="border-color: rgba(239, 68, 68, 0.4); color: #f87171;">
+                    Desconectar Microsoft 365
+                  </button>
+                </div>
+              </div>
+
+              <!-- Seleção e Validação da Conta de Agenda -->
+              <div class="card" style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); padding: 20px; margin-bottom: 24px;">
+                <h4 style="font-size: 0.95rem; font-weight: 600; margin-bottom: 6px;">Selecionar Conta de Agenda</h4>
+                <p style="color: var(--text-muted); font-size: 0.84rem; margin-bottom: 16px;">
+                  Localize ou informe a caixa postal do Exchange que armazenará os agendamentos. O acesso é estritamente restrito via Application RBAC.
+                </p>
+
+                <!-- Box: Mailbox Já Selecionada -->
+                <div id="m365-box-mailbox-selecionada" class="hidden" style="display: flex; justify-content: space-between; align-items: center; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius-sm); padding: 14px 18px;">
+                  <div>
+                    <div style="font-size: 0.75rem; color: #34d399; text-transform: uppercase; font-weight: 600;">✓ Caixa de Calendário Selecionada</div>
+                    <div id="m365-display-mailbox" style="font-family: 'JetBrains Mono', monospace; font-size: 1rem; font-weight: 600; color: var(--text-main); margin-top: 2px;">-</div>
+                  </div>
+                  <button class="btn btn-outline btn-sm" id="btn-trocar-mailbox">Trocar Conta</button>
+                </div>
+
+                <!-- Box: Pesquisa / Validação de Mailbox -->
+                <div id="m365-box-buscar-mailbox">
+                  <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <input type="text" id="input-busca-mailbox" placeholder="Digite o e-mail da agenda (ex: agenda@suaempresa.com.br)" style="flex: 1; min-width: 260px;">
+                    <button class="btn btn-primary" id="btn-buscar-mailbox">Buscar / Validar Conta</button>
+                  </div>
+                  <span class="form-desc" style="display: block; margin-top: 6px;">
+                    Valida existência e permissões de acesso da caixa postal via Microsoft Graph e Exchange Application RBAC.
+                  </span>
+
+                  <!-- Resultados da Busca -->
+                  <div id="m365-resultados-mailboxes" style="margin-top: 14px;" class="hidden"></div>
+                </div>
+              </div>
+
+              <!-- Status do Onboarding e Testes M365 -->
+              <div class="checklist-card" style="margin-top: 24px;">
+                <div class="checklist-title">Status da Conexão / Testes de Validação:</div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;">
+                  <div style="background: rgba(0,0,0,0.3); padding: 14px; border-radius: var(--radius-sm); text-align: center; border: 1px solid var(--border);">
+                    <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">1. Autenticação</div>
+                    <div id="badge-auth-status" style="font-size: 0.88rem; font-weight: 600; margin-top: 6px;">Pendente</div>
+                    <div id="badge-auth-time" style="font-size: 0.75rem; color: var(--text-subtle); margin-top: 2px;"></div>
+                  </div>
+                  <div style="background: rgba(0,0,0,0.3); padding: 14px; border-radius: var(--radius-sm); text-align: center; border: 1px solid var(--border);">
+                    <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">2. Leitura da Agenda</div>
+                    <div id="badge-leitura-status" style="font-size: 0.88rem; font-weight: 600; margin-top: 6px;">Pendente</div>
+                    <div id="badge-leitura-time" style="font-size: 0.75rem; color: var(--text-subtle); margin-top: 2px;"></div>
+                  </div>
+                  <div style="background: rgba(0,0,0,0.3); padding: 14px; border-radius: var(--radius-sm); text-align: center; border: 1px solid var(--border);">
+                    <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">3. Gravação Efêmera</div>
+                    <div id="badge-gravacao-status" style="font-size: 0.88rem; font-weight: 600; margin-top: 6px;">Pendente</div>
+                    <div id="badge-gravacao-time" style="font-size: 0.75rem; color: var(--text-subtle); margin-top: 2px;"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Ações dos 3 Testes -->
+              <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 20px;">
+                <button type="button" class="btn btn-outline" id="btn-testar-auth">1. Testar Autenticação</button>
+                <button type="button" class="btn btn-outline" id="btn-testar-leitura">2. Testar Leitura da Agenda</button>
+                <button type="button" class="btn btn-outline" id="btn-testar-gravacao">3. Testar Gravação (Efêmero)</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Aba Horários de Atendimento -->
+        <div class="tab-pane hidden" id="tab-horarios">
+          <div class="card">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+              <div>
+                <h3 class="card-title">Grade Semanal de Atendimento</h3>
+                <p class="card-desc">Configure os horários de funcionamento para os 7 dias da semana. Fins de faixa são estritamente exclusivos.</p>
+              </div>
+              <button class="btn btn-primary" id="btn-salvar-grade-horarios">Salvar Grade de Horários</button>
+            </div>
+            <div id="horarios-alert" class="alert hidden"></div>
+
+            <div id="grade-semanal-container">
+              <!-- Renderizado dinamicamente dia a dia com adicionar/remover faixas -->
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Aba Políticas de Agendamento -->
+        <div class="tab-pane hidden" id="tab-politica">
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title">Políticas de Agendamento</h3>
+              <p class="card-desc">Regras que parametrizam a oferta de horários e intervalos da URA telefônica.</p>
+            </div>
+            <div id="politica-alert" class="alert hidden"></div>
+
+            <form id="form-politica">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div class="form-group">
+                  <label for="pol-duracao">Duração da Consulta (minutos) *</label>
+                  <input type="number" id="pol-duracao" min="15" max="240" step="15" value="60" required>
+                  <span class="form-desc">Tempo reservado na agenda para o atendimento do paciente.</span>
+                </div>
+                <div class="form-group">
+                  <label for="pol-intervalo">Intervalo entre Slots (minutos) *</label>
+                  <input type="number" id="pol-intervalo" min="15" max="240" step="15" value="60" required>
+                  <span class="form-desc">Passo de oferta entre os horários gerados (ex: de 60 em 60 min, ou 30 em 30 min).</span>
+                </div>
+                <div class="form-group">
+                  <label for="pol-buffer-antes">Buffer Antes (minutos)</label>
+                  <input type="number" id="pol-buffer-antes" min="0" max="120" step="5" value="0">
+                  <span class="form-desc">Tempo de preparação antes de cada consulta.</span>
+                </div>
+                <div class="form-group">
+                  <label for="pol-buffer-depois">Buffer Depois (minutos)</label>
+                  <input type="number" id="pol-buffer-depois" min="0" max="120" step="5" value="0">
+                  <span class="form-desc">Tempo de higienização ou pausa após cada consulta.</span>
+                </div>
+                <div class="form-group">
+                  <label for="pol-antecedencia">Antecedência Mínima para Agendar (minutos) *</label>
+                  <input type="number" id="pol-antecedencia" min="0" max="1440" step="15" value="60" required>
+                  <span class="form-desc">Tempo mínimo entre a chamada telefônica e o primeiro slot disponibilizado.</span>
+                </div>
+                <div class="form-group">
+                  <label for="pol-limite-dias">Horizonte Máximo de Agendamento (dias) *</label>
+                  <input type="number" id="pol-limite-dias" min="1" max="180" value="60" required>
+                  <span class="form-desc">Limite máximo no futuro que o sistema aceita consultar e agendar.</span>
+                </div>
+                <div class="form-group">
+                  <label for="pol-max-opcoes">Máximo de Opções Oferecidas na Voz (1 a 10) *</label>
+                  <input type="number" id="pol-max-opcoes" min="1" max="10" value="4" required>
+                  <span class="form-desc">Quantidade máxima de horários ditados pela URA GoTo (padrão contratual: 4).</span>
+                </div>
+              </div>
+
+              <button type="submit" class="btn btn-primary" style="margin-top: 10px;">Salvar Políticas de Agendamento</button>
+            </form>
+          </div>
+        </div>
+
+        <!-- 4. Aba Feriados & Exceções -->
+        <div class="tab-pane hidden" id="tab-excecoes">
+          <div class="card">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+              <div>
+                <h3 class="card-title">Feriados e Exceções por Data</h3>
+                <p class="card-desc">Datas específicas que sobrepõem integralmente a regra semanal ordinária.</p>
+              </div>
+              <button class="btn btn-primary btn-sm" id="btn-abrir-modal-excecao">+ Adicionar Exceção</button>
+            </div>
+            <div id="excecoes-alert" class="alert hidden"></div>
+
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Descrição</th>
+                    <th>Situação</th>
+                    <th>Faixas Especiais</th>
+                    <th style="text-align: right;">Ações</th>
+                  </tr>
+                </thead>
+                <tbody id="lista-excecoes-body">
+                  <!-- Renderizado dinamicamente -->
+                </tbody>
+              </table>
+            </div>
+            <div id="excecoes-empty-state" class="hidden" style="text-align: center; padding: 32px 16px; color: var(--text-muted);">
+              Nenhum feriado ou data especial cadastrada.
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. Aba Prévia de Disponibilidade -->
+        <div class="tab-pane hidden" id="tab-previa">
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title">Simulador de Disponibilidade URA GoTo</h3>
+              <p class="card-desc">Executa rigorosamente o mesmo motor algorítmico utilizado pela discagem telefônica.</p>
+            </div>
+
+            <div style="display: flex; gap: 12px; align-items: flex-end; margin-bottom: 24px; flex-wrap: wrap;">
+              <div class="form-group" style="margin-bottom: 0; width: 220px;">
+                <label for="previa-data">Data para Consulta *</label>
+                <input type="date" id="previa-data">
+              </div>
+              <button class="btn btn-primary" id="btn-executar-previa">Ver Disponibilidade</button>
+            </div>
+
+            <div id="previa-resultado" class="hidden">
+              <div class="alert" id="previa-status-box"></div>
+              
+              <!-- Metadados da Consulta -->
+              <div style="background: rgba(0,0,0,0.3); padding: 18px; border-radius: var(--radius-sm); border: 1px solid var(--border); margin-bottom: 16px;">
+                <div style="display: flex; gap: 20px; flex-wrap: wrap; font-size: 0.84rem; color: var(--text-muted); margin-bottom: 14px;">
+                  <div><strong>Data:</strong> <span id="previa-meta-data">-</span></div>
+                  <div><strong>Fuso Horário:</strong> <span id="previa-meta-fuso">-</span></div>
+                  <div><strong>Duração:</strong> <span id="previa-meta-duracao">-</span></div>
+                  <div><strong>Fonte:</strong> <span id="previa-meta-fonte">-</span></div>
+                </div>
+
+                <h4 style="font-size: 0.85rem; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; letter-spacing: 0.05em;">Mensagem Sintetizada de Voz (TTS):</h4>
+                <p id="previa-tts" style="font-style: italic; color: #e2e8f0; font-size: 0.95rem;"></p>
+
+                <h4 style="font-size: 0.85rem; text-transform: uppercase; color: var(--accent); margin: 18px 0 8px 0; letter-spacing: 0.05em;">Horários Oferecidos ao Paciente:</h4>
+                <div id="previa-slots-chips" style="display: flex; gap: 8px; flex-wrap: wrap;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 6. Aba Chave GoTo Connect -->
+        <div class="tab-pane hidden" id="tab-chaves">
+          <div class="card">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+              <div>
+                <h3 class="card-title">Chaves de Integração GoTo (API Keys)</h3>
+                <p class="card-desc">Chave secreta enviada pela URA GoTo via cabeçalho <code>X-API-Key</code> para identificar a empresa.</p>
+              </div>
+              <button class="btn btn-primary btn-sm" id="btn-gerar-chave-goto" disabled>+ Gerar Chave GoTo</button>
+            </div>
+            <div id="chaves-alert" class="alert hidden"></div>
+
+            <!-- Checklist de Prontidão Obrigatório -->
+            <div class="checklist-card" id="box-checklist-prontidao">
+              <div class="checklist-title">Pré-requisitos Obrigatórios para Emissão da Chave GoTo:</div>
+              <div id="checklist-items-container">
+                <!-- Itens dinâmicos -->
+              </div>
+            </div>
+
+            <!-- Tabela de Chaves Existentes -->
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Identificador</th>
+                    <th>Prefixo Visível</th>
+                    <th>Situação</th>
+                    <th>Criada Em</th>
+                    <th>Último Uso</th>
+                    <th style="text-align: right;">Ações</th>
+                  </tr>
+                </thead>
+                <tbody id="lista-chaves-body">
+                  <!-- Renderizado dinamicamente -->
+                </tbody>
+              </table>
+            </div>
+            <div id="chaves-empty-state" class="hidden" style="text-align: center; padding: 32px 16px; color: var(--text-muted);">
+              Nenhuma chave GoTo gerada para esta empresa.
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Cadastrar Nova Empresa -->
+  <div id="modal-empresa" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h3 style="margin-bottom: 6px; font-size: 1.25rem;">Cadastrar Nova Empresa</h3>
+      <p style="color: var(--text-muted); font-size: 0.82rem; margin-bottom: 20px;">Preencha os dados cadastrais básicos da organização.</p>
+      <div id="modal-empresa-alert" class="alert alert-danger hidden"></div>
+
+      <form id="form-nova-empresa">
+        <div class="form-group">
+          <label for="nova-empresa-nome">Razão Social *</label>
+          <input type="text" id="nova-empresa-nome" required placeholder="Ex: Brasinfo Tecnologia Ltda" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label for="nova-empresa-fantasia">Nome Fantasia</label>
+          <input type="text" id="nova-empresa-fantasia" placeholder="Ex: Brasinfo TI" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label for="nova-empresa-slug">Identificador Único (Slug) *</label>
+          <input type="text" id="nova-empresa-slug" required placeholder="brasinfo-ti" pattern="^[a-z0-9-]+$" autocomplete="off">
+          <span class="form-desc">Apenas letras minúsculas, números e hífens. Imutável após o uso.</span>
+        </div>
+        <div class="form-group">
+          <label for="nova-empresa-fuso">Fuso Horário IANA *</label>
+          <select id="nova-empresa-fuso">
+            <option value="America/Sao_Paulo">America/Sao_Paulo (Brasília, SP, RJ, Sul, Sudeste)</option>
+            <option value="America/Manaus">America/Manaus (Amazonas, Rondônia, Roraima)</option>
+            <option value="America/Cuiaba">America/Cuiaba (Mato Grosso, MS)</option>
+            <option value="America/Belem">America/Belem (Pará, Amapá)</option>
+            <option value="America/Fortaleza">America/Fortaleza (Nordeste)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-main);">
+            <input type="checkbox" id="nova-empresa-ativo" checked style="width: auto;">
+            Empresa Ativa imediatamente
+          </label>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px;">
+          <button type="button" class="btn btn-outline" id="btn-cancelar-modal-empresa">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="btn-submit-modal-empresa">Criar Empresa</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Adicionar Exceção / Feriado -->
+  <div id="modal-excecao" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h3 style="margin-bottom: 6px; font-size: 1.25rem;">Adicionar Feriado ou Exceção</h3>
+      <p style="color: var(--text-muted); font-size: 0.82rem; margin-bottom: 20px;">Defina a data e o comportamento específico.</p>
+      <div id="modal-excecao-alert" class="alert alert-danger hidden"></div>
+
+      <form id="form-nova-excecao">
+        <div class="form-group">
+          <label for="excecao-data">Data da Exceção *</label>
+          <input type="date" id="excecao-data" required>
+        </div>
+        <div class="form-group">
+          <label for="excecao-desc">Descrição / Motivo *</label>
+          <input type="text" id="excecao-desc" required placeholder="Ex: Feriado Tiradentes, Confraternização de Final de Ano">
+        </div>
+        <div class="form-group">
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+            <input type="checkbox" id="excecao-fechado" checked style="width: auto;">
+            Dia Inteiro Fechado (Sem atendimentos)
+          </label>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px;">
+          <button type="button" class="btn btn-outline" id="btn-cancelar-modal-excecao">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Salvar Exceção</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Chave GoTo Gerada (Exibição Única) -->
+  <div id="modal-chave-gerada" class="modal-overlay hidden">
+    <div class="modal-card">
+      <h3 style="color: var(--success); margin-bottom: 6px; font-size: 1.25rem;">Chave GoTo Gerada com Sucesso!</h3>
+      <p style="font-size: 0.85rem; color: var(--text-muted);">
+        Esta chave de integração completa será exibida <strong>apenas uma vez</strong>. Copie e configure agora no portal do GoTo Connect.
+      </p>
+      <div class="key-display" id="display-chave-completa"></div>
+      
+      <div style="background: rgba(0,0,0,0.35); padding: 14px; border-radius: var(--radius-sm); font-size: 0.82rem; margin-bottom: 20px; border: 1px solid var(--border);">
+        <p style="font-weight: 600; color: #cbd5e1; margin-bottom: 6px;">Configuração no GoTo Connect:</p>
+        <p>• <strong>URL do Endpoint:</strong> <span style="font-family: monospace; color: #38bdf8;">https://goto-agendamento.vercel.app/api/agendamento</span></p>
+        <p>• <strong>Cabeçalho Obrigatório:</strong> <span style="font-family: monospace; color: #38bdf8;">X-API-Key</span></p>
+        <p>• <strong>Content-Type:</strong> <span style="font-family: monospace; color: #38bdf8;">application/json</span></p>
+      </div>
+
+      <button type="button" class="btn btn-primary" style="width: 100%;" id="btn-fechar-modal-chave">Já copiei e salvei a chave com segurança</button>
+    </div>
+  </div>
+
+  <!-- Modal Genérico de Confirmação -->
+  <div id="modal-confirmacao" class="modal-overlay hidden">
+    <div class="modal-card" style="max-width: 440px;">
+      <h3 id="modal-confirm-titulo" style="margin-bottom: 8px;">Confirmação</h3>
+      <p id="modal-confirm-msg" style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 24px;"></p>
+      <div style="display: flex; justify-content: flex-end; gap: 10px;">
+        <button type="button" class="btn btn-outline" id="btn-modal-confirm-nao">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="btn-modal-confirm-sim">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ============================================================
+    // ESTADO DA APLICAÇÃO
+    // ============================================================
+    let csrfToken = "";
+    let currentEmpresas = [];
+    let selectedEmpresaId = null;
+    let selectedEmpresaObj = null;
+
+    const DIAS_SEMANA_NOMES = [
+      "Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira",
+      "Quinta-feira", "Sexta-feira", "Sábado"
+    ];
+
+    // ============================================================
+    // REQUISIÇÕES HTTP SEGURAS COM TRATAMENTO DE STATUS E CSRF
+    // ============================================================
+    async function apiFetch(url, options = {}) {
+      options.credentials = "include"; // Garante envio e recepção de cookies HttpOnly
+      options.headers = options.headers || {};
+
+      const method = (options.method || "GET").toUpperCase();
+      if (["POST", "PUT", "DELETE", "PATCH"].includes(method) && csrfToken) {
+        options.headers["X-CSRF-Token"] = csrfToken;
+      }
+
+      let res;
+      try {
+        res = await fetch(url, options);
+      } catch (err) {
+        throw new Error("Falha na conexão de rede com o servidor.");
+      }
+
+      // Tratamento de sessão expirada
+      if (res.status === 401) {
+        if (!url.includes("/api/admin/session") && !url.includes("/api/admin/login")) {
+          alert("Sua sessão expirou. Por favor, faça login novamente.");
+          csrfToken = "";
+          location.reload();
+        }
+      }
+
+      return res;
+    }
+
+    // Modal de Confirmação Promise-based
+    function confirmarAcao(titulo, mensagem, botaoTexto = "Confirmar", perigo = false) {
+      return new Promise((resolve) => {
+        const modal = document.getElementById("modal-confirmacao");
+        document.getElementById("modal-confirm-titulo").innerText = titulo;
+        document.getElementById("modal-confirm-msg").innerText = mensagem;
+        const btnSim = document.getElementById("modal-confirm-sim");
+        btnSim.innerText = botaoTexto;
+        btnSim.className = perigo ? "btn btn-danger" : "btn btn-primary";
+
+        modal.classList.remove("hidden");
+
+        const cleanup = () => {
+          modal.classList.add("hidden");
+          btnSim.onclick = null;
+          document.getElementById("btn-modal-confirm-nao").onclick = null;
+        };
+
+        btnSim.onclick = () => { cleanup(); resolve(true); };
+        document.getElementById("btn-modal-confirm-nao").onclick = () => { cleanup(); resolve(false); };
+      });
+    }
+
+    // ============================================================
+    // INICIALIZAÇÃO DA SESSÃO E NAVEGAÇÃO
+    // ============================================================
+    async function init() {
+      try {
+        const res = await apiFetch("/api/admin/session");
+        if (res.ok) {
+          const data = await res.json();
+          csrfToken = data.csrfToken;
+          document.getElementById("user-display-email").innerText = data.usuario.email;
+          document.getElementById("header-user-actions").style.display = "flex";
+          document.getElementById("view-login").classList.add("hidden");
+
+          await carregarEmpresas();
+
+          const urlParams = new URLSearchParams(window.location.search);
+          const empresaIdParam = urlParams.get("empresaId");
+          const tabParam = urlParams.get("tab") || "tab-m365";
+          const m365Status = urlParams.get("m365_status");
+          const m365Erro = urlParams.get("m365_erro");
+
+          if (empresaIdParam && currentEmpresas.some(e => e.id === empresaIdParam)) {
+            abrirDetalheEmpresa(empresaIdParam, tabParam);
+            if (m365Status === "conectado") {
+              const alertEl = document.getElementById("m365-alert");
+              if (alertEl) {
+                alertEl.className = "alert alert-success";
+                alertEl.innerText = "✓ Conexão com Microsoft 365 estabelecida e autorizada com sucesso!";
+                alertEl.classList.remove("hidden");
+              }
+            } else if (m365Erro) {
+              const alertEl = document.getElementById("m365-alert");
+              if (alertEl) {
+                alertEl.className = "alert alert-danger";
+                alertEl.innerText = `Falha na conexão Microsoft 365: ${m365Erro}`;
+                alertEl.classList.remove("hidden");
+              }
+            }
+            window.history.replaceState({}, document.title, window.location.pathname);
+          } else {
+            abrirOverview();
+          }
+        } else {
+          exibirTelaLogin();
+        }
+      } catch (e) {
+        exibirTelaLogin();
+      }
+    }
+
+    function exibirTelaLogin() {
+      document.getElementById("header-user-actions").style.display = "none";
+      document.getElementById("view-login").classList.remove("hidden");
+      document.getElementById("view-overview").classList.add("hidden");
+      document.getElementById("view-tenant-detail").classList.add("hidden");
+    }
+
+    function abrirOverview() {
+      document.getElementById("view-login").classList.add("hidden");
+      document.getElementById("view-tenant-detail").classList.add("hidden");
+      document.getElementById("view-overview").classList.remove("hidden");
+      carregarEmpresas();
+    }
+
+    function abrirDetalheEmpresa(empresaId, abaAlvo = "tab-m365") {
+      selectedEmpresaId = empresaId;
+      selectedEmpresaObj = currentEmpresas.find(e => e.id === empresaId) || null;
+      if (!selectedEmpresaObj) return;
+
+      document.getElementById("view-overview").classList.add("hidden");
+      document.getElementById("view-tenant-detail").classList.remove("hidden");
+
+      document.getElementById("current-tenant-name").innerText = selectedEmpresaObj.nome;
+      document.getElementById("current-tenant-slug").innerText = `${selectedEmpresaObj.slug} • Fuso: ${selectedEmpresaObj.fuso_horario || "America/Sao_Paulo"}`;
+      document.getElementById("current-tenant-badge").innerHTML = selectedEmpresaObj.ativo
+        ? `<span class="badge badge-success">Ativa</span>`
+        : `<span class="badge badge-danger">Inativa</span>`;
+
+      renderSidebarTenants();
+
+      // Ativa aba
+      document.querySelectorAll(".tab-btn").forEach(b => {
+        b.classList.toggle("active", b.getAttribute("data-tab") === abaAlvo);
+      });
+      document.querySelectorAll(".tab-pane").forEach(p => {
+        p.classList.toggle("hidden", p.id !== abaAlvo);
+      });
+      carregarAba(abaAlvo);
+    }
+
+    // Navegação do Header
+    document.getElementById("btn-header-home").addEventListener("click", () => {
+      if (!document.getElementById("view-login").classList.contains("hidden")) return;
+      abrirOverview();
+    });
+    document.getElementById("btn-nav-dashboard").addEventListener("click", abrirOverview);
+    document.getElementById("btn-voltar-overview").addEventListener("click", abrirOverview);
+
+    // ============================================================
+    // LOGIN E LOGOUT
+    // ============================================================
+    document.getElementById("form-login").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = document.getElementById("login-email").value.trim();
+      const senha = document.getElementById("login-senha").value;
+      const alertEl = document.getElementById("login-alert");
+      const btnSubmit = document.getElementById("btn-login-submit");
+
+      alertEl.classList.add("hidden");
+      btnSubmit.disabled = true;
+      btnSubmit.innerText = "Autenticando...";
+
+      try {
+        const res = await fetch("/api/admin/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, senha })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          csrfToken = data.csrfToken;
+          await init();
+        } else {
+          alertEl.innerText = data.error || "Falha na autenticação.";
+          alertEl.classList.remove("hidden");
+        }
+      } catch (err) {
+        alertEl.innerText = "Erro ao conectar com o servidor de autenticação.";
+        alertEl.classList.remove("hidden");
+      } finally {
+        btnSubmit.disabled = false;
+        btnSubmit.innerText = "Entrar no Painel";
+      }
+    });
+
+    document.getElementById("btn-logout").addEventListener("click", async () => {
+      await apiFetch("/api/admin/logout", { method: "POST" });
+      csrfToken = "";
+      location.reload();
+    });
+
+    // ============================================================
+    // DASHBOARD & LISTAGEM DE EMPRESAS
+    // ============================================================
+    async function carregarEmpresas() {
+      try {
+        const res = await apiFetch("/api/admin/empresas");
+        if (res.ok) {
+          const data = await res.json();
+          currentEmpresas = data.empresas || [];
+          atualizarMetricasOverview();
+          renderOverviewTable();
+        }
+      } catch (e) {
+        console.error("Erro ao carregar empresas:", e);
+      }
+    }
+
+    function atualizarMetricasOverview() {
+      const total = currentEmpresas.length;
+      const ativas = currentEmpresas.filter(e => e.ativo).length;
+      const m365Ok = currentEmpresas.filter(e => e.m365_status === "ativo" || e.m365_ultimo_teste_sucesso).length;
+      const chavesAtivas = currentEmpresas.reduce((acc, e) => acc + (e.chaves_ativas_count || 0), 0);
+
+      document.getElementById("metric-total-empresas").innerText = total;
+      document.getElementById("metric-empresas-ativas").innerText = ativas;
+      document.getElementById("metric-m365-conectados").innerText = m365Ok;
+      document.getElementById("metric-chaves-ativas").innerText = chavesAtivas;
+    }
+
+    function renderOverviewTable() {
+      const tbody = document.getElementById("overview-table-body");
+      const emptyState = document.getElementById("overview-empty-state");
+      tbody.innerHTML = "";
+
+      if (currentEmpresas.length === 0) {
+        emptyState.classList.remove("hidden");
+        return;
+      }
+      emptyState.classList.add("hidden");
+
+      currentEmpresas.forEach(emp => {
+        const tr = document.createElement("tr");
+
+        // Status M365 Badge
+        let m365Badge = `<span class="badge badge-neutral">Não configurado</span>`;
+        if (emp.m365_status === "ativo" || emp.m365_ultimo_teste_sucesso) {
+          m365Badge = `<span class="badge badge-success">✓ Conectado</span>`;
+        } else if (emp.m365_mailbox) {
+          m365Badge = `<span class="badge badge-warning">Pendente</span>`;
+        }
+
+        // Status Chave GoTo Badge
+        let chaveBadge = `<span class="badge badge-neutral">Nenhuma</span>`;
+        if (emp.chaves_ativas_count > 0) {
+          chaveBadge = `<span class="badge badge-success">✓ ${emp.chaves_ativas_count} ativa(s)</span>`;
+        }
+
+        tr.innerHTML = `
+          <td>
+            <div style="font-weight: 600;">${emp.nome}</div>
+            ${emp.nome_fantasia ? `<div style="font-size: 0.78rem; color: var(--text-muted);">${emp.nome_fantasia}</div>` : ""}
+          </td>
+          <td><code style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem;">${emp.slug}</code></td>
+          <td>
+            ${emp.ativo ? `<span class="badge badge-success">Ativa</span>` : `<span class="badge badge-danger">Inativa</span>`}
+          </td>
+          <td>
+            ${m365Badge}
+            ${emp.m365_mailbox ? `<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">${emp.m365_mailbox}</div>` : ""}
+          </td>
+          <td>${chaveBadge}</td>
+          <td style="text-align: right;">
+            <div style="display: flex; gap: 6px; justify-content: flex-end;">
+              <button class="btn btn-outline btn-sm" onclick="abrirDetalheEmpresa('${emp.id}', 'tab-m365')">M365</button>
+              <button class="btn btn-outline btn-sm" onclick="abrirDetalheEmpresa('${emp.id}', 'tab-horarios')">Horários</button>
+              <button class="btn btn-outline btn-sm" onclick="abrirDetalheEmpresa('${emp.id}', 'tab-previa')">Prévia</button>
+              <button class="btn btn-primary btn-sm" onclick="abrirDetalheEmpresa('${emp.id}', 'tab-m365')">Gerenciar →</button>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderSidebarTenants() {
+      const container = document.getElementById("lista-tenants-sidebar");
+      container.innerHTML = "";
+      currentEmpresas.forEach(emp => {
+        const li = document.createElement("li");
+        li.className = `tenant-item ${emp.id === selectedEmpresaId ? "active" : ""}`;
+        li.innerHTML = `
+          <div>
+            <div class="tenant-name">${emp.nome}</div>
+            <div class="tenant-slug">${emp.slug}</div>
+          </div>
+          <span style="font-size: 0.75rem; color: ${emp.ativo ? "var(--success)" : "var(--danger)"};">
+            ${emp.ativo ? "●" : "○"}
+          </span>
+        `;
+        li.onclick = () => abrirDetalheEmpresa(emp.id);
+        container.appendChild(li);
+      });
+    }
+
+    // ============================================================
+    // CADASTRO DE NOVA EMPRESA (MODAL)
+    // ============================================================
+    function abrirModalNovaEmpresa() {
+      document.getElementById("modal-empresa-alert").classList.add("hidden");
+      document.getElementById("form-nova-empresa").reset();
+      document.getElementById("nova-empresa-ativo").checked = true;
+      document.getElementById("modal-empresa").classList.remove("hidden");
+      setTimeout(() => document.getElementById("nova-empresa-nome").focus(), 100);
+    }
+
+    document.getElementById("btn-overview-nova-empresa").addEventListener("click", abrirModalNovaEmpresa);
+    document.getElementById("btn-sidebar-nova-empresa").addEventListener("click", abrirModalNovaEmpresa);
+    document.getElementById("btn-cancelar-modal-empresa").addEventListener("click", () => {
+      document.getElementById("modal-empresa").classList.add("hidden");
+    });
+
+    document.getElementById("form-nova-empresa").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const nome = document.getElementById("nova-empresa-nome").value.trim();
+      const nomeFantasia = document.getElementById("nova-empresa-fantasia").value.trim();
+      const slug = document.getElementById("nova-empresa-slug").value.trim();
+      const fusoHorario = document.getElementById("nova-empresa-fuso").value;
+      const ativo = document.getElementById("nova-empresa-ativo").checked;
+      const alertEl = document.getElementById("modal-empresa-alert");
+      const btnSubmit = document.getElementById("btn-submit-modal-empresa");
+
+      alertEl.classList.add("hidden");
+
+      if (!/^[a-z0-9-]+$/.test(slug)) {
+        alertEl.innerText = "O identificador (slug) deve conter apenas letras minúsculas, números e hífens.";
+        alertEl.classList.remove("hidden");
+        return;
+      }
+
+      btnSubmit.disabled = true;
+      btnSubmit.innerText = "Cadastrando...";
+
+      try {
+        const res = await apiFetch("/api/admin/empresas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ nome, nomeFantasia, slug, fusoHorario, ativo })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          document.getElementById("modal-empresa").classList.add("hidden");
+          await carregarEmpresas();
+          // Abre imediatamente a configuração da empresa recém-criada
+          abrirDetalheEmpresa(data.empresa.id, "tab-m365");
+        } else {
+          alertEl.innerText = data.error || "Falha ao cadastrar empresa.";
+          alertEl.classList.remove("hidden");
+        }
+      } catch (err) {
+        alertEl.innerText = "Erro ao conectar com o servidor.";
+        alertEl.classList.remove("hidden");
+      } finally {
+        btnSubmit.disabled = false;
+        btnSubmit.innerText = "Criar Empresa";
+      }
+    });
+
+    // ============================================================
+    // ABAS DE CONFIGURAÇÃO DA EMPRESA
+    // ============================================================
+    document.querySelectorAll(".tab-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".tab-pane").forEach(p => p.classList.add("hidden"));
+        btn.classList.add("active");
+        const tabId = btn.getAttribute("data-tab");
+        document.getElementById(tabId).classList.remove("hidden");
+        carregarAba(tabId);
+      });
+    });
+
+    function carregarAba(tabId) {
+      if (!selectedEmpresaId) return;
+      if (tabId === "tab-m365") carregarM365();
+      if (tabId === "tab-horarios") carregarHorarios();
+      if (tabId === "tab-politica") carregarPolitica();
+      if (tabId === "tab-excecoes") carregarExcecoes();
+      if (tabId === "tab-previa") inicializarPrevia();
+      if (tabId === "tab-chaves") carregarChavesGoTo();
+    }
+
+    // ============================================================
+    // ============================================================
+    // 1. ABA MICROSOFT 365 / AGENDA (MULTITENANT APP REGISTRATION)
+    // ============================================================
+    async function carregarM365() {
+      const alertEl = document.getElementById("m365-alert");
+      alertEl.classList.add("hidden");
+
+      try {
+        const res = await apiFetch(`/api/admin/empresas/${selectedEmpresaId}/m365`);
+        if (res.ok) {
+          const { conexao } = await res.json();
+          const headerBadge = document.getElementById("m365-header-badge");
+
+          if (!conexao || !conexao.conectado) {
+            // Estado 1: Desconectado
+            document.getElementById("m365-view-desconectado").classList.remove("hidden");
+            document.getElementById("m365-view-conectado").classList.add("hidden");
+            headerBadge.innerHTML = `<span class="badge badge-neutral">Status: Não conectado</span>`;
+          } else {
+            // Estado 2: Conectado
+            document.getElementById("m365-view-desconectado").classList.add("hidden");
+            document.getElementById("m365-view-conectado").classList.remove("hidden");
+            headerBadge.innerHTML = `<span class="badge badge-success">✓ Microsoft 365 Conectado</span>`;
+
+            document.getElementById("m365-display-org").innerText = conexao.tenantDisplayName || conexao.tenantId || "Tenant Autorizado";
+            if (conexao.conectadoEm) {
+              document.getElementById("m365-display-conectado-em").innerText =
+                "Autorizado via Microsoft Admin Consent em " + new Date(conexao.conectadoEm).toLocaleString("pt-BR");
+            }
+
+            // Mailbox
+            if (conexao.mailboxEmail) {
+              document.getElementById("m365-box-mailbox-selecionada").classList.remove("hidden");
+              document.getElementById("m365-box-buscar-mailbox").classList.add("hidden");
+              document.getElementById("m365-display-mailbox").innerText = conexao.mailboxEmail;
+            } else {
+              document.getElementById("m365-box-mailbox-selecionada").classList.add("hidden");
+              document.getElementById("m365-box-buscar-mailbox").classList.remove("hidden");
+              document.getElementById("m365-resultados-mailboxes").classList.add("hidden");
+              document.getElementById("m365-resultados-mailboxes").innerHTML = "";
+            }
+
+            // Atualiza badges das 3 validações
+            renderStatusValidacoesM365(conexao.validacoes);
+          }
+        }
+      } catch (e) {
+        console.error("Erro ao carregar M365:", e);
+      }
+    }
+
+    function renderStatusValidacoesM365(validacoes = {}) {
+      const renderBadge = (idStatus, idTime, item) => {
+        const elStatus = document.getElementById(idStatus);
+        const elTime = document.getElementById(idTime);
+        if (!item || item.status === "pendente") {
+          elStatus.innerText = "Pendente";
+          elStatus.style.color = "var(--text-muted)";
+          elTime.innerText = "Não testado";
+        } else if (item.status === "ok") {
+          elStatus.innerText = "✓ Validado (OK)";
+          elStatus.style.color = "var(--success)";
+          elTime.innerText = item.tempoMs ? `${item.tempoMs}ms` : "Sucesso";
+        } else {
+          elStatus.innerText = "✗ Erro";
+          elStatus.style.color = "var(--danger)";
+          elTime.innerText = item.erro ? item.erro.substring(0, 30) + "..." : "Falha";
+        }
+      };
+
+      renderBadge("badge-auth-status", "badge-auth-time", validacoes?.auth);
+      renderBadge("badge-leitura-status", "badge-leitura-time", validacoes?.leitura);
+      renderBadge("badge-gravacao-status", "badge-gravacao-time", validacoes?.gravacao);
+    }
+
+    // Iniciar Conexão Microsoft 365 (Redirecionamento para Admin Consent Oficial)
+    document.getElementById("btn-conectar-m365").addEventListener("click", async () => {
+      const btn = document.getElementById("btn-conectar-m365");
+      const alertEl = document.getElementById("m365-alert");
+      alertEl.classList.add("hidden");
+      btn.disabled = true;
+      btn.innerText = "Conectando com a Microsoft...";
+
+      try {
+        const res = await apiFetch(`/api/admin/empresas/${selectedEmpresaId}/m365?action=iniciar-conexao`, {
+          method: "POST"
+        });
+        const data = await res.json();
+        if (res.ok && data.urlAutorizacao) {
+          window.location.href = data.urlAutorizacao;
+        } else {
+          alertEl.className = "alert alert-danger";
+          alertEl.innerText = data.error || "Não foi possível iniciar o fluxo de autorização da Microsoft.";
+          alertEl.classList.remove("hidden");
+          btn.disabled = false;
+          btn.innerText = "Conectar Microsoft 365";
+        }
+      } catch (err) {
+        alertEl.className = "alert alert-danger";
+        alertEl.innerText = "Erro ao conectar com o servidor.";
+        alertEl.classList.remove("hidden");
+        btn.disabled = false;
+        btn.innerText = "Conectar Microsoft 365";
+      }
+    });
+
+    // Buscar / Validar Conta de Agenda
+    document.getElementById("btn-buscar-mailbox").addEventListener("click", async () => {
+      const query = document.getElementById("input-busca-mailbox").value.trim();
+      const alertEl = document.getElementById("m365-alert");
+      const resContainer = document.getElementById("m365-resultados-mailboxes");
+      const btn = document.getElementById("btn-buscar-mailbox");
+      alertEl.classList.add("hidden");
+
+      if (!query) {
+        alertEl.className = "alert alert-warning";
+        alertEl.innerText = "Digite um e-mail ou termo de busca para localizar a conta de agenda.";
+        alertEl.classList.remove("hidden");
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerText = "Buscando / Validando...";
+      resContainer.innerHTML = "";
+
+      try {
+        const res = await apiFetch(`/api/admin/empresas/${selectedEmpresaId}/m365?action=buscar-mailbox&q=${encodeURIComponent(query)}`);
+        const data = await res.json();
+        if (res.ok && Array.isArray(data.resultados) && data.resultados.length > 0) {
+          resContainer.classList.remove("hidden");
+          data.resultados.forEach(item => {
+            const card = document.createElement("div");
+            card.style.cssText = "display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 8px;";
+            card.innerHTML = `
+              <div>
+                <div style="font-weight: 600; font-size: 0.9rem;">${item.displayName || item.email}</div>
+                <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--text-muted);">${item.email}</div>
+                <div style="font-size: 0.72rem; color: var(--success); margin-top: 2px;">✓ Acesso ao calendário verificado</div>
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="confirmarSelecaoMailbox('${item.email}', '${item.displayName || item.email}')">Usar esta Conta</button>
+            `;
+            resContainer.appendChild(card);
+          });
+        } else {
+          alertEl.className = "alert alert-danger";
+          alertEl.innerText = data.error || `Nenhuma conta de agenda encontrada com o termo "${query}". Verifique se o e-mail está correto e atribuído no Application RBAC.`;
+          alertEl.classList.remove("hidden");
+        }
+      } catch (err) {
+        alertEl.className = "alert alert-danger";
+        alertEl.innerText = "Erro ao buscar conta no Microsoft 365.";
+        alertEl.classList.remove("hidden");
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "Buscar / Validar Conta";
+      }
+    });
+
+    window.confirmarSelecaoMailbox = async (email, displayName) => {
+      const alertEl = document.getElementById("m365-alert");
+      alertEl.classList.add("hidden");
+
+      try {
+        const res = await apiFetch(`/api/admin/empresas/${selectedEmpresaId}/m365?action=selecionar-mailbox`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mailboxEmail: email, mailboxDisplayName: displayName })
+        });
+        if (res.ok) {
+          alertEl.className = "alert alert-success";
+          alertEl.innerText = `Conta de agenda "${email}" vinculada com sucesso à empresa!`;
+          alertEl.classList.remove("hidden");
+          await carregarM365();
+          await carregarEmpresas();
+        } else {
+          const data = await res.json();
+          alertEl.className = "alert alert-danger";
+          alertEl.innerText = data.error || "Erro ao vincular conta de agenda.";
+          alertEl.classList.remove("hidden");
+        }
+      } catch (e) {
+        alertEl.className = "alert alert-danger";
+        alertEl.innerText = "Erro ao conectar com o servidor.";
+        alertEl.classList.remove("hidden");
+      }
+    };
+
+    document.getElementById("btn-trocar-mailbox").addEventListener("click", () => {
+      document.getElementById("m365-box-mailbox-selecionada").classList.add("hidden");
+      document.getElementById("m365-box-buscar-mailbox").classList.remove("hidden");
+    });
+
+    document.getElementById("btn-desconectar-m365").addEventListener("click", async () => {
+      const confirmado = await confirmarAcao(
+        "Desconectar Microsoft 365",
+        "Tem certeza que deseja desconectar esta organização Microsoft 365? A conta de agenda e os testes serão desvinculados, mas os horários e políticas da empresa serão preservados.",
+        "Sim, Desconectar",
+        true
+      );
+      if (!confirmado) return;
+
+      const alertEl = document.getElementById("m365-alert");
+      alertEl.classList.add("hidden");
+
+      try {
+        const res = await apiFetch(`/api/admin/empresas/${selectedEmpresaId}/m365?action=desconectar`, {
+          method: "POST"
+        });
+        if (res.ok) {
+          alertEl.className = "alert alert-info";
+          alertEl.innerText = "Organização Microsoft 365 desconectada com sucesso.";
+          alertEl.classList.remove("hidden");
+          await carregarM365();
+          await carregarEmpresas();
+        } else {
+          const data = await res.json();
+          alertEl.className = "alert alert-danger";
+          alertEl.innerText = data.error || "Erro ao desconectar Microsoft 365.";
+          alertEl.classList.remove("hidden");
+        }
+      } catch (e) {
+        alertEl.className = "alert alert-danger";
+        alertEl.innerText = "Erro ao conectar com o servidor.";
+        alertEl.classList.remove("hidden");
+      }
+    });
+
+    // 1. Teste de Autenticação OAuth2
+    document.getElementById("btn-testar-auth").addEventListener("click", async () => {
+      const alertEl = document.getElementById("m365-alert");
+      const btn = document.getElementById("btn-testar-auth");
+      alertEl.className = "alert alert-info";
+      alertEl.innerText = "Testando autenticação app-only via OAuth2 client_credentials no Microsoft Entra ID...";
+      alertEl.classList.remove("hidden");
+      btn.disabled = true;
+
+      try {
+        const res = await apiFetch(`/api/admin/empresas/${selectedEmpresaId}/testar-m365?tipo=auth`, { method: "POST" });
+        const data = await res.json();
+        if (res.ok) {
+          alertEl.className = "alert alert-success";
+          alertEl.innerText = `Autenticação Microsoft 365: OK (${data.tempoMs}ms) - Token de serviço emitido com sucesso pelo Entra ID.`;
+        } else {
+          alertEl.className = "alert alert-danger";
+          alertEl.innerText = data.erro || "Falha na autenticação com Microsoft Entra ID.";
+        }
+        await carregarM365();
+      } catch (e) {
+        alertEl.className = "alert alert-danger";
+        alertEl.innerText = "Erro ao executar teste de autenticação.";
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // 2. Teste de Leitura da Agenda (calendarView)
+    document.getElementById("btn-testar-leitura").addEventListener("click", async () => {
+      const alertEl = document.getElementById("m365-alert");
+      const btn = document.getElementById("btn-testar-leitura");
+      alertEl.className = "alert alert-info";
+      alertEl.innerText = "Executando teste não destrutivo de leitura na mailbox configurada...";
+      alertEl.classList.remove("hidden");
+      btn.disabled = true;
+
+      try {
+        const res = await apiFetch(`/api/admin/empresas/${selectedEmpresaId}/testar-m365?tipo=leitura`, { method: "POST" });
+        const data = await res.json();
+        if (res.ok) {
+          alertEl.className = "alert alert-success";
+          alertEl.innerText = `Leitura da agenda validada com sucesso! Mailbox: ${data.mailbox} (${data.tempoMs}ms). Zero compromissos privados foram expostos.`;
+        } else {
+          alertEl.className = "alert alert-danger";
+          alertEl.innerText = data.erro || "Falha na leitura da agenda via Microsoft Graph.";
+        }
+        await carregarM365();
+      } catch (e) {
+        alertEl.className = "alert alert-danger";
+        alertEl.innerText = "Erro ao executar teste de leitura.";
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // 3. Teste de Gravação (Efêmero com Confirmação e Alerta Crítico)
+    document.getElementById("btn-testar-gravacao").addEventListener("click", async () => {
+      const confirmado = await confirmarAcao(
+        "Confirmação de Teste de Gravação",
+        "Este teste criará temporariamente um evento técnico marcado como Livre e o removerá imediatamente. Deseja continuar?",
+        "Sim, Executar Teste"
+      );
+      if (!confirmado) return;
+
+      const alertEl = document.getElementById("m365-alert");
+      const btn = document.getElementById("btn-testar-gravacao");
+      alertEl.className = "alert alert-info";
+      alertEl.innerText = "Executando criação e remoção imediata do evento técnico temporário...";
+      alertEl.classList.remove("hidden");
+      btn.disabled = true;
+
+      try {
+        const res = await apiFetch(`/api/admin/empresas/${selectedEmpresaId}/testar-m365?tipo=gravacao`, { method: "POST" });
+        const data = await res.json();
+        if (res.ok) {
+          alertEl.className = "alert alert-success";
+          alertEl.innerHTML = `
+            <div>
+              <strong>Gravação Microsoft 365: OK (${data.tempoMs}ms)</strong><br>
+              • Evento técnico criado com sucesso (ID: <code>${data.eventoCriadoId}</code>)<br>
+              • Evento temporário removido imediatamente da agenda (Sucesso).
+            </div>
+          `;
+        } else {
+          // Se criou mas não removeu, alerta crítico!
+          if (data.eventoCriadoId && !data.eventoRemovido) {
+            alertEl.className = "alert alert-danger";
+            alertEl.innerHTML = `
+              <div>
+                <strong>ALERTA CRÍTICO: FALHA NA REMOÇÃO DO EVENTO TÉCNICO!</strong><br>
+                O evento de teste foi criado no Microsoft 365 (ID: <code>${data.eventoCriadoId}</code>), porém a chamada de exclusão falhou: ${data.erro}.<br>
+                Remova manualmente este evento técnico temporário da caixa postal.
+              </div>
+            `;
+          } else {
+            alertEl.className = "alert alert-danger";
+            alertEl.innerText = data.erro || "Falha na criação de evento no calendário.";
+          }
+        }
+        await carregarM365();
+      } catch (e) {
+        alertEl.className = "alert alert-danger";
+        alertEl.innerText = "Erro ao executar teste de gravação.";
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // ============================================================
+    // 2. ABA HORÁRIOS DE ATENDIMENTO
+    // ============================================================
+    let stateHorariosSemanais = [];
+
+    async function carregarHorarios() {
+      const alertEl = document.getElementById("horarios-alert");
+      alertEl.classList.add("hidden");
+
+      try {
+        const res = await apiFetch(`/api/admin/empresas/${selectedEmpresaId}/horarios`);
+        if (res.ok) {
+          const data = await res.json();
+          stateHorariosSemanais = Array.isArray(data.horarios) ? data.horarios : [];
+          renderGradeSemanal();
+        }
+      } catch (e) {
+        console.error("Erro ao carregar horários:", e);
+      }
+    }
+
+    function renderGradeSemanal() {
+      const container = document.getElementById("grade-semanal-container");
+      container.innerHTML = "";
+
+      // Garante que existam entradas para os 7 dias (0 a 6)
+      for (let dia = 0; dia <= 6; dia++) {
+        let diaObj = stateHorariosSemanais.find(d => Number(d.dia_semana ?? d.diaSemana) === dia);
+        if (!diaObj) {
+          diaObj = {
+            diaSemana: dia,
+            fechado: dia === 0 || dia === 6, // Padrão fins de semana fechado
+            atendimento24h: false,
+            faixas: dia === 0 || dia === 6 ? [] : [{ horaInicio: "09:00", horaFim: "18:00" }]
+          };
+          stateHorariosSemanais.push(diaObj);
+        }
+
+        const isFechado = Boolean(diaObj.fechado);
+        const is24h = Boolean(diaObj.atendimento_24h ?? diaObj.atendimento24h);
+        const faixas = Array.isArray(diaObj.faixas) ? diaObj.faixas : [];
+
+        const row = document.createElement("div");
+        row.className = "day-row";
+        row.innerHTML = `
+          <div class="day-header">
+            <div class="day-title">${DIAS_SEMANA_NOMES[dia]}</div>
+            <div class="day-options">
+              <label>
+                <input type="checkbox" ${isFechado ? "checked" : ""} onchange="toggleDiaFechado(${dia}, this.checked)">
+                Fechado
+              </label>
+              <label>
+                <input type="checkbox" ${is24h ? "checked" : ""} ${isFechado ? "disabled" : ""} onchange="toggleDia24h(${dia}, this.checked)">
+                24 Horas
+              </label>
+            </div>
+          </div>
+          <div id="faixas-container-dia-${dia}" class="${isFechado || is24h ? "hidden" : ""}">
+            <div class="time-slot-list" id="lista-faixas-dia-${dia}"></div>
+            <button type="button" class="btn btn-outline btn-sm" style="margin-top: 10px;" onclick="adicionarFaixaDia(${dia})">+ Adicionar Turno/Faixa</button>
+          </div>
+          ${isFechado ? `<div style="font-size: 0.8rem; color: var(--danger);">● Fechado o dia todo</div>` : ""}
+          ${is24h && !isFechado ? `<div style="font-size: 0.8rem; color: var(--accent);">● Atendimento ininterrupto 24 horas</div>` : ""}
+        `;
+        container.appendChild(row);
+
+        if (!isFechado && !is24h) {
+          renderFaixasDoDia(dia, faixas);
+        }
+      }
+    }
+
+    function renderFaixasDoDia(dia, faixas) {
+      const container = document.getElementById(`lista-faixas-dia-${dia}`);
+      if (!container) return;
+      container.innerHTML = "";
+
+      if (faixas.length === 0) {
+        container.innerHTML = `<span style="font-size: 0.8rem; color: var(--text-muted);">Nenhuma faixa definida. Clique abaixo para adicionar.</span>`;
+        return;
+      }
+
+      faixas.forEach((f, idx) => {
+        const hInicio = f.horaInicio || f.hora_inicio || "09:00";
+        const hFim = f.horaFim || f.hora_fim || "18:00";
+
+        const div = document.createElement("div");
+        div.className = "time-slot-row";
+        div.innerHTML = `
+          <input type="time" value="${hInicio}" onchange="atualizarFaixa(${dia}, ${idx}, 'horaInicio', this.value)">
+          <span style="color: var(--text-muted); font-size: 0.8rem;">até</span>
+          <input type="time" value="${hFim}" onchange="atualizarFaixa(${dia}, ${idx}, 'horaFim', this.value)">
+          <button type="button" class="btn btn-danger btn-sm" onclick="removerFaixa(${dia}, ${idx})" title="Remover Faixa">✕</button>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    window.toggleDiaFechado = (dia, checked) => {
+      const d = stateHorariosSemanais.find(item => Number(item.dia_semana ?? item.diaSemana) === dia);
+      if (d) {
+        d.fechado = checked;
+        if (checked) d.atendimento24h = false;
+        renderGradeSemanal();
+      }
+    };
+
+    window.toggleDia24h = (dia, checked) => {
+      const d = stateHorariosSemanais.find(item => Number(item.dia_semana ?? item.diaSemana) === dia);
+      if (d) {
+        d.atendimento24h = checked;
+        if (checked) d.fechado = false;
+        renderGradeSemanal();
+      }
+    };
+
+    window.adicionarFaixaDia = (dia) => {
+      const d = stateHorariosSemanais.find(item => Number(item.dia_semana ?? item.diaSemana) === dia);
+      if (d) {
+        d.faixas = d.faixas || [];
+        d.faixas.push({ horaInicio: "09:00", horaFim: "18:00" });
+        renderGradeSemanal();
+      }
+    };
+
+    window.removerFaixa = (dia, idx) => {
+      const d = stateHorariosSemanais.find(item => Number(item.dia_semana ?? item.diaSemana) === dia);
+      if (d && Array.isArray(d.faixas)) {
+        d.faixas.splice(idx, 1);
+        renderGradeSemanal();
+      }
+    };
+
+    window.atualizarFaixa = (dia, idx, campo, valor) => {
+      const d = stateHorariosSemanais.find(item => Number(item.dia_semana ?? item.diaSemana) === dia);
+      if (d && d.faixas && d.faixas[idx]) {
+        d.faixas[idx][campo] = valor;
+      }
+    };
+
+    // Validação de sobreposição no frontend antes de salvar
+    function validarSobreposicaoLocal(faixas) {
+      if (!Array.isArray(faixas) || faixas.length <= 1) return { valido: true };
+      const arr = [];
+      for (const f of faixas) {
+        const [hI, mI] = (f.horaInicio || f.hora_inicio).split(":").map(Number);
+        const [hF, mF] = (f.horaFim || f.hora_fim).split(":").map(Number);
+        let minI = hI * 60 + mI;
+        let minF = hF * 60 + mF;
+        if (minF === 0 || minF < minI) minF += 1440; // Meia-noite
+        arr.push({ minI, minF, i: f.horaInicio, f: f.horaFim });
+      }
+      arr.sort((a, b) => a.minI - b.minI);
+      for (let i = 1; i < arr.length; i++) {
+        if (arr[i].minI < arr[i - 1].minF) {
+          return { valido: false, erro: `Sobreposição detectada: ${arr[i-1].i}-${arr[i-1].f} sobrepõe ${arr[i].i}-${arr[i].f}` };
+        }
+      }
+      return { valido: true };
+    }
+
+    document.getElementById("btn-salvar-grade-horarios").addEventListener("click", async () => {
+      const alertEl = document.getElementById("horarios-alert");
+      alertEl.classList.add("hidden");
+
+      // Validação prévia
+      for (const d of stateHorariosSemanais) {
+        if (!d.fechado && !d.atendimento24h && Array.isArray(d.faixas)) {
+          const check = validarSobreposicaoLocal(d.faixas);
+          if (!check.valido) {
+            alertEl.className = "alert alert-danger";
+            alertEl.innerText = `Erro no dia ${DIAS_SEMANA_NOMES[d.dia_semana ?? d.diaSemana]}: ${check.erro}`;
+            alertEl.classList.remove("hidden");
+            return;
+          }
+        }
+      }
+
+      const btn = document.getElementById("btn-salvar-grade-horarios");
+      btn.disabled = true;
+      btn.innerText = "Salvando...";
+
+      try {
+        const payload = {
+          horarios: stateHorariosSemanais.map(d => ({
+            diaSemana: Number(d.dia_semana ?? d.diaSemana),
+            fechado: Boolean(d.fechado),
+            atendimento24h: Boolean(d.atendimento_24h ?? d.atendimento24h),
+            faixas: (d.fechado || d.atendimento24h) ? [] : d.faixas.map(f => ({
+              horaInicio: f.horaInicio || f.hora_inicio,
+              horaFim: f.horaFim || f.hora_fim
+            }))
+          }))
+        };
+
+        const res = await apiFetch(`/api/admin/empresas/${selectedEmpresaId}/horarios`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok) {
+          alertEl.className = "alert alert-success";
+          alertEl.innerText = "Grade de horários semanais salva com sucesso no banco de dados!";
+          alertEl.classList.remove("hidden");
+          await carregarHorarios();
+        } else {
+          alertEl.className = "alert alert-danger";
+          alertEl.innerText = data.error || "Erro ao salvar horários.";
+          alertEl.classList.remove("hidden");
+        }
+      } catch (e) {
+        alertEl.className = "alert alert-danger";
+        alertEl.innerText = "Erro ao conectar com o servidor.";
+        alertEl.classList.remove("hidden");
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "Salvar Grade de Horários";
+      }
+    });
+
+    // ============================================================
+    // 3. ABA POLÍTICAS DE AGENDAMENTO
+    // ============================================================
+    async function carregarPolitica() {
+      const alertEl = document.getElementById("politica-alert");
+      alertEl.classList.add("hidden");
+
+      try {
+        const res = await apiFetch(`/api/admin/empresas/${selectedEmpresaId}/horarios`);
+        if (res.ok) {
+          const data = await res.json();
+          const pol = data.politica || {};
+          document.getElementById("pol-duracao").value = pol.duracao_minutos || 60;
+          document.getElementById("pol-intervalo").value = pol.intervalo_entre_slots || 60;
+          document.getElementById("pol-buffer-antes").value = pol.buffer_antes_minutos || 0;
+          document.getElementById("pol-buffer-depois").value = pol.buffer_depois_minutos || 0;
+          document.getElementById("pol-antecedencia").value = pol.antecedencia_minima_minutos || 60;
+          document.getElementById("pol-limite-dias").value = pol.limite_maximo_dias || 60;
+          document.getElementById("pol-max-opcoes").value = pol.max_opcoes_retorno || 4;
+        }
+      } catch (e) {
+        console.error("Erro ao carregar política:", e);
+      }
+    }
+
+    document.getElementById("form-politica").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const alertEl = document.getElementById("politica-alert");
+      alertEl.classList.add("hidden");
+
+      const payload = {
+        politica: {
+          duracaoMinutos: Number(document.getElementById("pol-duracao").value),
+          intervaloEntreSlots: Number(document.getElementById("pol-intervalo").value),
+          bufferAntesMinutos: Number(document.getElementById("pol-buffer-antes").value),
+          bufferDepoisMinutos: Number(document.getElementById("pol-buffer-depois").value),
+          antecedenciaMinimaMinutos: Number(document.getElementById("pol-antecedencia").value),
+          limiteMaximoDias: Number(document.getElementById("pol-limite-dias").value),
+          maxOpcoesRetorno: Number(document.getElementById("pol-max-opcoes").value)
+        }
+      };
+
+      try {
+        const res = await apiFetch(`/api/admin/empresas/${selectedEmpresaId}/horarios`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok) {
+          alertEl.className = "alert alert-success";
+          alertEl.innerText = "Políticas de agendamento salvas com sucesso!";
+          alertEl.classList.remove("hidden");
+        } else {
+          alertEl.className = "alert alert-danger";
+          alertEl.innerText = data.error || "Erro ao salvar políticas.";
+          alertEl.classList.remove("hidden");
+        }
+      } catch (e) {
+        alertEl.className = "alert alert-danger";
+        alertEl.innerText = "Erro ao conectar com o servidor.";
+        alertEl.classList.remove("hidden");
+      }
+    });
+
+    // ============================================================
+    // 4. ABA FERIADOS & EXCEÇÕES
+    // ============================================================
+    async function carregarExcecoes() {
+      const tbody = document.getElementById("lista-excecoes-body");
+      const emptyState = document.getElementById("excecoes-empty-state");
+      tbody.innerHTML = "";
+
+      try {
+        const res = await apiFetch(`/api/admin/empresas/${selectedEmpresaId}/excecoes`);
+        if (res.ok) {
+          const { excecoes } = await res.json();
+          if (!excecoes || excecoes.length === 0) {
+            emptyState.classList.remove("hidden");
+            return;
+          }
+          emptyState.classList.add("hidden");
+
+          excecoes.forEach(item => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td><strong>${item.data}</strong></td>
+              <td>${item.descricao}</td>
+              <td>
+                ${item.fechado ? `<span class="badge badge-danger">Dia Fechado</span>` : `<span class="badge badge-success">Horário Especial</span>`}
+              </td>
+              <td>${item.fechado ? "-" : (Array.isArray(item.faixas) ? item.faixas.map(f => `${f.horaInicio}-${f.horaFim}`).join(", ") : "-")}</td>
+              <td style="text-align: right;">
+                <button class="btn btn-danger btn-sm" onclick="removerExcecaoData('${item.data}')">Excluir</button>
+              </td>
+            `;
+            tbody.appendChild(tr);
+          });
+        }
+      } catch (e) {
+        console.error("Erro ao carregar exceções:", e);
+      }
+    }
+
+    document.getElementById("btn-abrir-modal-excecao").addEventListener("click", () => {
+      document.getElementById("modal-excecao-alert").classList.add("hidden");
+      document.getElementById("form-nova-excecao").reset();
+      document.getElementById("excecao-fechado").checked = true;
+      document.getElementById("modal-excecao").classList.remove("hidden");
+    });
+    document.getElementById("btn-cancelar-modal-excecao").addEventListener("click", () => {
+      document.getElementById("modal-excecao").classList.add("hidden");
+    });
+
+    document.getElementById("form-nova-excecao").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const data = document.getElementById("excecao-data").value;
+      const descricao = document.getElementById("excecao-desc").value.trim();
+      const fechado = document.getElementById("excecao-fechado").checked;
+      const alertEl = document.getElementById("modal-excecao-alert");
+
+      alertEl.classList.add("hidden");
+
+      try {
+        const res = await apiFetch(`/api/admin/empresas/${selectedEmpresaId}/excecoes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ data, descricao, fechado })
+        });
+        const resData = await res.json();
+        if (res.ok) {
+          document.getElementById("modal-excecao").classList.add("hidden");
+          await carregarExcecoes();
+        } else {
+          alertEl.innerText = resData.error || "Erro ao salvar exceção.";
+          alertEl.classList.remove("hidden");
+        }
+      } catch (e) {
+        alertEl.innerText = "Erro ao conectar com o servidor.";
+        alertEl.classList.remove("hidden");
+      }
+    });
+
+    window.removerExcecaoData = async (dataStr) => {
+      const confirmou = await confirmarAcao("Excluir Exceção", `Deseja realmente remover a exceção para a data ${dataStr}?`, "Excluir", true);
+      if (!confirmou) return;
+
+      const res = await apiFetch(`/api/admin/empresas/${selectedEmpresaId}/excecoes?data=${dataStr}`, { method: "DELETE" });
+      if (res.ok) carregarExcecoes();
+    };
+
+    // ============================================================
+    // 5. ABA PRÉVIA DE DISPONIBILIDADE
+    // ============================================================
+    function inicializarPrevia() {
+      // Pré-carrega data de amanhã se vazio
+      const input = document.getElementById("previa-data");
+      if (!input.value) {
+        const d = new Date();
+        d.setDate(d.getDate() + 1);
+        input.value = d.toISOString().split("T")[0];
+      }
+    }
+
+    document.getElementById("btn-executar-previa").addEventListener("click", async () => {
+      const dataStr = document.getElementById("previa-data").value;
+      if (!dataStr) return alert("Selecione uma data para simulação.");
+
+      const btn = document.getElementById("btn-executar-previa");
+      btn.disabled = true;
+      btn.innerText = "Calculando...";
+
+      try {
+        const res = await apiFetch(`/api/admin/empresas/${selectedEmpresaId}/previa-disponibilidade?data=${dataStr}`);
+        const info = await res.json();
+
+        const boxResultado = document.getElementById("previa-resultado");
+        const statusBox = document.getElementById("previa-status-box");
+        const ttsEl = document.getElementById("previa-tts");
+        const chipsEl = document.getElementById("previa-slots-chips");
+
+        boxResultado.classList.remove("hidden");
+
+        document.getElementById("previa-meta-data").innerText = info.data || dataStr;
+        document.getElementById("previa-meta-fuso").innerText = info.fusoHorario || "America/Sao_Paulo";
+        document.getElementById("previa-meta-duracao").innerText = `${info.duracaoMinutos || 60} minutos`;
+        document.getElementById("previa-meta-fonte").innerHTML = (info.totalEventosOcupadosCalendario !== undefined && info.totalEventosOcupadosCalendario > 0)
+          ? `<span class="badge badge-success">✓ Sincronizado com Microsoft 365 real (${info.totalEventosOcupadosCalendario} evento(s) ocupado(s))</span>`
+          : `<span class="badge badge-neutral">Motor base de políticas e horários</span>`;
+
+        if (info.disponivel && Array.isArray(info.horarios) && info.horarios.length > 0) {
+          statusBox.className = "alert alert-success";
+          statusBox.innerText = `✓ Disponibilidade Confirmada: ${info.quantidade} opção(ões) de horário encontrada(s).`;
+        } else {
+          statusBox.className = "alert alert-warning";
+          statusBox.innerText = `Sem horários disponíveis para esta data: ${info.motivo || "Não há vagas"}.`;
+        }
+
+        ttsEl.innerText = `"${info.mensagemVoz || "Não há horários disponíveis."}"`;
+
+        chipsEl.innerHTML = "";
+        if (Array.isArray(info.horarios) && info.horarios.length > 0) {
+          info.horarios.forEach(h => {
+            const chip = document.createElement("span");
+            chip.style.cssText = "background: var(--primary); color: #fff; padding: 7px 14px; border-radius: 6px; font-weight: 700; font-size: 0.95rem; font-family: 'JetBrains Mono', monospace; box-shadow: 0 2px 8px var(--primary-glow);";
+            chip.innerText = h;
+            chipsEl.appendChild(chip);
+          });
+        } else {
+          chipsEl.innerHTML = `<span style="color: var(--text-muted); font-size: 0.85rem;">Nenhum horário livre gerado para a data selecionada.</span>`;
+        }
+      } catch (e) {
+        alert("Erro ao consultar disponibilidade da empresa.");
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "Ver Disponibilidade";
+      }
+    });
+
+    // ============================================================
+    // 6. ABA CHAVE GOTO CONNECT & ONBOARDING PREREQUISITES
+    // ============================================================
+    async function carregarChavesGoTo() {
+      const tbody = document.getElementById("lista-chaves-body");
+      const emptyState = document.getElementById("chaves-empty-state");
+      const btnGerar = document.getElementById("btn-gerar-chave-goto");
+      tbody.innerHTML = "";
+
+      try {
+        const res = await apiFetch(`/api/admin/empresas/${selectedEmpresaId}/chaves-goto`);
+        if (res.ok) {
+          const { chaves, checklist } = await res.json();
+
+          // Render Checklist
+          renderChecklistProntidao(checklist);
+
+          // Habilita ou desabilita botão
+          btnGerar.disabled = !checklist?.prontoParaGerar;
+          btnGerar.title = checklist?.prontoParaGerar
+            ? "Gerar nova chave GoTo"
+            : "Complete todos os pré-requisitos antes de gerar a chave";
+
+          if (!chaves || chaves.length === 0) {
+            emptyState.classList.remove("hidden");
+            return;
+          }
+          emptyState.classList.add("hidden");
+
+          chaves.forEach(c => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td><strong>${c.nome_identificador}</strong></td>
+              <td><code style="font-family: 'JetBrains Mono', monospace; color: #38bdf8;">${c.key_prefix}...</code></td>
+              <td>${c.ativo ? `<span class="badge badge-success">Ativa</span>` : `<span class="badge badge-danger">Revogada</span>`}</td>
+              <td>${new Date(c.criado_em).toLocaleDateString("pt-BR")}</td>
+              <td>${c.ultimo_uso_em ? new Date(c.ultimo_uso_em).toLocaleString("pt-BR") : "Nunca utilizada"}</td>
+              <td style="text-align: right;">
+                ${c.ativo ? `<button class="btn btn-danger btn-sm" onclick="revogarChaveGoTo('${c.id}')">Revogar</button>` : "-"}
+              </td>
+            `;
+            tbody.appendChild(tr);
+          });
+        }
+      } catch (e) {
+        console.error("Erro ao carregar chaves GoTo:", e);
+      }
+    }
+
+    function renderChecklistProntidao(chk = {}) {
+      const container = document.getElementById("checklist-items-container");
+      container.innerHTML = "";
+
+      const itens = [
+        { label: "Empresa está ativa no cadastro", ok: chk.empresaAtiva },
+        { label: "Conexão Microsoft 365 configurada (Tenant ID e Mailbox)", ok: chk.m365Configurado },
+        { label: "Teste 1: Autenticação Microsoft Entra validada", ok: chk.authValidada },
+        { label: "Teste 2: Leitura da agenda testada com sucesso", ok: chk.leituraValidada },
+        { label: "Teste 3: Gravação efêmera na agenda testada com sucesso", ok: chk.gravacaoValidada },
+        { label: "Grade de horários de funcionamento configurada", ok: chk.horariosConfigurados }
+      ];
+
+      itens.forEach(it => {
+        const div = document.createElement("div");
+        div.className = "checklist-item";
+        div.innerHTML = `
+          <span class="check-icon" style="color: ${it.ok ? "var(--success)" : "var(--danger)"};">
+            ${it.ok ? "✓" : "✗"}
+          </span>
+          <span style="color: ${it.ok ? "var(--text-main)" : "var(--text-muted)"};">
+            ${it.label}
+          </span>
+        `;
+        container.appendChild(div);
+      });
+
+      if (!chk.prontoParaGerar) {
+        const warn = document.createElement("div");
+        warn.className = "alert alert-warning";
+        warn.style.marginTop = "14px";
+        warn.style.marginBottom = "0";
+        warn.innerHTML = `<strong>Atenção:</strong> A geração da chave GoTo permanece bloqueada até que todos os itens acima estejam concluídos.`;
+        container.appendChild(warn);
+      }
+    }
+
+    document.getElementById("btn-gerar-chave-goto").addEventListener("click", async () => {
+      const nome = prompt("Identificador amigável para a chave GoTo:", "Integração GoTo URA Principal");
+      if (!nome) return;
+
+      const btn = document.getElementById("btn-gerar-chave-goto");
+      btn.disabled = true;
+
+      try {
+        const res = await apiFetch(`/api/admin/empresas/${selectedEmpresaId}/chaves-goto`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ nomeIdentificador: nome })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          document.getElementById("display-chave-completa").innerText = data.chave.chaveCompleta;
+          document.getElementById("modal-chave-gerada").classList.remove("hidden");
+          await carregarChavesGoTo();
+        } else {
+          alert(data.error || "Erro ao gerar chave.");
+        }
+      } catch (e) {
+        alert("Erro ao conectar com o servidor.");
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById("btn-fechar-modal-chave").addEventListener("click", () => {
+      document.getElementById("modal-chave-gerada").classList.add("hidden");
+    });
+
+    window.revogarChaveGoTo = async (chaveId) => {
+      const confirmou = await confirmarAcao(
+        "Revogar Chave GoTo",
+        "Tem certeza que deseja revogar esta chave GoTo? Qualquer chamada da URA utilizando esta chave será rejeitada com HTTP 401 imediatamente.",
+        "Sim, Revogar Chave",
+        true
+      );
+      if (!confirmou) return;
+
+      const res = await apiFetch(`/api/admin/empresas/${selectedEmpresaId}/chaves-goto?chaveId=${chaveId}`, { method: "DELETE" });
+      if (res.ok) carregarChavesGoTo();
+    };
+
+    // ============================================================
+    // EXECUÇÃO INICIAL
+    // ============================================================
+    document.addEventListener("DOMContentLoaded", init);
+  </script>
+</body>
+</html>

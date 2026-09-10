@@ -3,9 +3,13 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "test": "node test/agendamento.test.js"
+    "test": "node test/agendamento.test.js",
+    "test:multiempresa": "node test/multiempresa.test.js",
+    "test:all": "node test/agendamento.test.js && node test/multiempresa.test.js",
+    "bootstrap:admin": "node scripts/bootstrap_admin.js"
   },
   "dependencies": {
-    "@vercel/functions": "^3.9.5"
+    "@vercel/functions": "^3.9.5",
+    "pg": "^8.23.0"
   }
 }

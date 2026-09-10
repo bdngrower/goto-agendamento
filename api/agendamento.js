@@ -1,84 +1,24 @@
+const empresaRepo = require("../lib/repositories/empresaRepository");
+const graphClient = require("../lib/graphClient");
+const availabilityEngine = require("../lib/availabilityEngine");
+const { verificarRateLimitEmpresa } = require("../lib/rateLimiter");
+const { compararHashesSeguro, hashChaveGoTo } = require("../lib/crypto");
+
 // ============================================================
-// CONFIGURAÇÕES
+// CONFIGURAÇÕES PADRÃO E FALLBACK LEGADO
 // ============================================================
 
-const MAILBOX_ID =
-  "2a2b2ab2-20cc-48b6-8846-2f633bd3cb7c";
-
-const GRAPH_TIMEZONE =
-  "E. South America Standard Time";
-
-const TIMEZONE_SP =
-  "America/Sao_Paulo";
-
-const OFFSET =
-  "-03:00";
-
-const DURACAO_MINUTOS =
-  60;
-
-const HORARIOS_POSSIVEIS = [
-  "09:00",
-  "10:00",
-  "11:00",
-  "12:00",
-  "13:00",
-  "14:00",
-  "15:00",
-  "16:00"
+const LEGACY_MAILBOX_ID = "2a2b2ab2-20cc-48b6-8846-2f633bd3cb7c";
+const DEFAULT_TIMEZONE = "America/Sao_Paulo";
+const GRAPH_TIMEZONE_NAME = "E. South America Standard Time";
+const OFFSET = "-03:00";
+const DURACAO_PADRAO = 60;
+const HORARIOS_PADRAO_LEGADO = [
+  "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00"
 ];
 
-
 // ============================================================
-// AUXILIARES DE FUSO E DATA/HORA (AMERICA/SAO_PAULO)
-// ============================================================
-
-function obterDataHoraAtualSP() {
-  const agora = new Date();
-  const formatador = new Intl.DateTimeFormat("en-CA", {
-    timeZone: TIMEZONE_SP,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false
-  });
-  const partes = formatador.formatToParts(agora);
-  const mapa = {};
-  for (const p of partes) {
-    mapa[p.type] = p.value;
-  }
-  const dataHoje = `${mapa.year}-${mapa.month}-${mapa.day}`;
-  const horarioHoje = `${mapa.hour}:${mapa.minute}`;
-  return { dataHoje, horarioHoje };
-}
-
-function validarDataEHorarioFuturo(data, horario) {
-  if (!dataValida(data)) {
-    return { valido: false, erro: "Data inválida. Use o formato AAAA-MM-DD." };
-  }
-  if (!horarioValido(horario)) {
-    return { valido: false, erro: "Horário inválido. Use o formato HH:mm." };
-  }
-
-  const { dataHoje, horarioHoje } = obterDataHoraAtualSP();
-
-  if (data < dataHoje) {
-    return { valido: false, erro: "Não é possível selecionar uma data passada." };
-  }
-
-  if (data === dataHoje && horario <= horarioHoje) {
-    return { valido: false, erro: "Para o dia de hoje, não é possível selecionar um horário que já passou." };
-  }
-
-  return { valido: true };
-}
-
-
-// ============================================================
-// NORMALIZA TEXTO E MASCARAMENTO SEGURO
+// NORMALIZAÇÃO DE TEXTO E MASCARAMENTO SEGURO
 // ============================================================
 
 function normalizarTexto(valor) {
@@ -88,14 +28,8 @@ function normalizarTexto(valor) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-
-// ============================================================
-// NORMALIZA TELEFONE
-// ============================================================
-
 function normalizarTelefone(telefone) {
-  return String(telefone || "")
-    .replace(/\D/g, "");
+  return String(telefone || "").replace(/\D/g, "");
 }
 
 function canonicalizarTelefone(telefone) {
@@ -149,552 +83,235 @@ function mascararTelefone(telefone) {
   return t ? "***" : "";
 }
 
-
 // ============================================================
-// DADOS RECEBIDOS
-// ============================================================
-
-function obterDados(req) {
-  return {
-    ...(req.query || {}),
-    ...(req.body || {})
-  };
-}
-
-
-// ============================================================
-// VALIDA DATA REAL
+// FORMATAÇÃO DE DATA E HORÁRIO PARA SÍNTESE DE VOZ (TTS GOTO)
 // ============================================================
 
-function dataValida(data) {
-  const str = String(data || "").trim();
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str);
-  if (!match) {
-    return false;
-  }
-
-  const ano = Number(match[1]);
-  const mes = Number(match[2]);
-  const dia = Number(match[3]);
-
-  if (mes < 1 || mes > 12 || dia < 1 || dia > 31) {
-    return false;
-  }
-
-  const isBissexto =
-    ano % 4 === 0 && (ano % 100 !== 0 || ano % 400 === 0);
-
-  const diasPorMes = [
-    0,
-    31,
-    isBissexto ? 29 : 28,
-    31,
-    30,
-    31,
-    30,
-    31,
-    31,
-    30,
-    31,
-    30,
-    31
+function formatarDataFalada(dateTime) {
+  if (!dateTime) return "";
+  const data = String(dateTime).substring(0, 10);
+  const [ano, mes, dia] = data.split("-").map(Number);
+  const nomesMeses = [
+    "", "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+    "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"
   ];
-
-  return dia <= diasPorMes[mes];
+  return `${dia} de ${nomesMeses[mes]} de ${ano}`;
 }
 
-
-// ============================================================
-// VALIDA HORÁRIO
-// ============================================================
-
-function horarioValido(horario) {
-  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(
-    String(horario || "")
-  );
+function formatarDataCurtaFalada(dateTime) {
+  if (!dateTime) return "";
+  const data = String(dateTime).substring(0, 10);
+  const [ano, mes, dia] = data.split("-").map(Number);
+  const nomesMeses = [
+    "", "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+    "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"
+  ];
+  return `${dia} de ${nomesMeses[mes]}`;
 }
 
+function falarHorario(horario) {
+  if (!horario) return "";
+  const [hora, minuto] = horario.substring(0, 5).split(":").map(Number);
+  if (hora === 12 && minuto === 0) return "meio-dia";
+  if (minuto === 0) return `${hora} horas`;
+  if (minuto === 30) return `${hora} e meia`;
+  return `${hora} e ${minuto}`;
+}
 
 // ============================================================
-// SOMA MINUTOS SEM ALTERAR O FUSO LÓGICO
+// AUXILIARES DE RESOLUÇÃO TEMPORAL NO FUSO DA EMPRESA
 // ============================================================
 
-function somarMinutosLocal(
-  data,
-  horario,
-  minutosAdicionar
-) {
-  const [ano, mes, dia] =
-    data.split("-").map(Number);
+function somarMinutosLocal(data, horario, minutosAdicionar) {
+  const [ano, mes, dia] = data.split("-").map(Number);
+  const [hora, minuto] = horario.split(":").map(Number);
 
-  const [hora, minuto] =
-    horario.split(":").map(Number);
-
-  const calculo =
-    new Date(
-      Date.UTC(
-        ano,
-        mes - 1,
-        dia,
-        hora,
-        minuto,
-        0
-      )
-    );
-
-  calculo.setUTCMinutes(
-    calculo.getUTCMinutes() +
-    minutosAdicionar
-  );
+  const calculo = new Date(Date.UTC(ano, mes - 1, dia, hora, minuto, 0));
+  calculo.setUTCMinutes(calculo.getUTCMinutes() + minutosAdicionar);
 
   const dataFinal =
     `${calculo.getUTCFullYear()}-` +
-    `${String(
-      calculo.getUTCMonth() + 1
-    ).padStart(2, "0")}-` +
-    `${String(
-      calculo.getUTCDate()
-    ).padStart(2, "0")}`;
+    `${String(calculo.getUTCMonth() + 1).padStart(2, "0")}-` +
+    `${String(calculo.getUTCDate()).padStart(2, "0")}`;
 
   const horarioFinal =
-    `${String(
-      calculo.getUTCHours()
-    ).padStart(2, "0")}:` +
-    `${String(
-      calculo.getUTCMinutes()
-    ).padStart(2, "0")}`;
+    `${String(calculo.getUTCHours()).padStart(2, "0")}:` +
+    `${String(calculo.getUTCMinutes()).padStart(2, "0")}`;
 
   return {
     data: dataFinal,
     horario: horarioFinal,
-    dateTime:
-      `${dataFinal}T${horarioFinal}:00`
+    dateTime: `${dataFinal}T${horarioFinal}:00`
   };
 }
 
-
-// ============================================================
-// PRÓXIMO DIA
-// ============================================================
-
-function proximoDia(data) {
-  const [ano, mes, dia] =
-    data.split("-").map(Number);
-
-  const calculo =
-    new Date(
-      Date.UTC(
-        ano,
-        mes - 1,
-        dia,
-        12,
-        0,
-        0
-      )
-    );
-
-  calculo.setUTCDate(
-    calculo.getUTCDate() + 1
-  );
-
-  return (
-    `${calculo.getUTCFullYear()}-` +
-    `${String(
-      calculo.getUTCMonth() + 1
-    ).padStart(2, "0")}-` +
-    `${String(
-      calculo.getUTCDate()
-    ).padStart(2, "0")}`
-  );
+function proximoDia(dataStr) {
+  const [ano, mes, dia] = dataStr.split("-").map(Number);
+  const d = new Date(Date.UTC(ano, mes - 1, dia + 1));
+  const anoFinal = d.getUTCFullYear();
+  const mesFinal = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const diaFinal = String(d.getUTCDate()).padStart(2, "0");
+  return `${anoFinal}-${mesFinal}-${diaFinal}`;
 }
 
-
-// ============================================================
-// FORMATA DATA PARA FALA
-// ============================================================
-
-function formatarDataFalada(dateTime) {
-  if (!dateTime) {
-    return "";
+function validarDataEHorarioFuturoNoFuso(data, horario, fusoHorario = DEFAULT_TIMEZONE) {
+  if (!availabilityEngine.dataValida(data)) {
+    return { valido: false, erro: "Data inválida. Use o formato AAAA-MM-DD." };
+  }
+  if (!availabilityEngine.horarioValido(horario)) {
+    return { valido: false, erro: "Horário inválido. Use o formato HH:mm." };
   }
 
-  const data =
-    String(dateTime)
-      .substring(0, 10);
+  const { dataHoje, horarioHoje } = availabilityEngine.obterDataHoraAtualNoFuso(fusoHorario);
 
-  const [ano, mes, dia] =
-    data.split("-").map(Number);
+  if (data < dataHoje) {
+    return { valido: false, erro: "Não é possível selecionar uma data passada." };
+  }
 
-  const nomesMeses = [
-    "",
-    "janeiro",
-    "fevereiro",
-    "março",
-    "abril",
-    "maio",
-    "junho",
-    "julho",
-    "agosto",
-    "setembro",
-    "outubro",
-    "novembro",
-    "dezembro"
-  ];
+  if (data === dataHoje && horario <= horarioHoje) {
+    return { valido: false, erro: "Para o dia de hoje, não é possível selecionar um horário que já passou." };
+  }
 
-  return (
-    `${dia} de ${nomesMeses[mes]} de ${ano}`
-  );
+  return { valido: true };
 }
 
-function formatarDataCurtaFalada(dateTime) {
-  if (!dateTime) {
-    return "";
-  }
-
-  const data =
-    String(dateTime)
-      .substring(0, 10);
-
-  const [ano, mes, dia] =
-    data.split("-").map(Number);
-
-  const nomesMeses = [
-    "",
-    "janeiro",
-    "fevereiro",
-    "março",
-    "abril",
-    "maio",
-    "junho",
-    "julho",
-    "agosto",
-    "setembro",
-    "outubro",
-    "novembro",
-    "dezembro"
-  ];
-
-  return (
-    `${dia} de ${nomesMeses[mes]}`
-  );
-}
-
-
 // ============================================================
-// FORMATA HORÁRIO PARA FALA
+// BUSCA E EXTRAÇÃO DE METADADOS EM EVENTOS GRAPH
 // ============================================================
 
-function falarHorario(horario) {
-  if (!horario) {
-    return "";
+function extrairMetadadosEvento(evento) {
+  const corpo = String(evento.body?.content || evento.bodyPreview || "");
+
+  let cpfEncontrado = "";
+  const matchCpf = corpo.match(/CPF:\s*([0-9.\-]+)/i);
+  if (matchCpf) {
+    cpfEncontrado = normalizarTelefone(matchCpf[1]);
   }
 
-  const [hora, minuto] =
-    horario
-      .substring(0, 5)
-      .split(":")
-      .map(Number);
-
-  if (
-    hora === 12 &&
-    minuto === 0
-  ) {
-    return "meio-dia";
+  let telefoneEncontrado = "";
+  const matchTelefone = corpo.match(/Telefone:\s*([0-9()+\-\s]+)/i);
+  if (matchTelefone) {
+    telefoneEncontrado = canonicalizarTelefone(matchTelefone[1]);
   }
 
-  if (minuto === 0) {
-    return `${hora} horas`;
-  }
-
-  if (minuto === 30) {
-    return `${hora} e meia`;
-  }
-
-  return `${hora} e ${minuto}`;
-}
-
-
-// ============================================================
-// OBTÉM TOKEN MICROSOFT GRAPH
-// ============================================================
-
-async function obterAccessTokenGraph() {
-  const tenantId =
-    process.env.AZURE_TENANT_ID;
-
-  const clientId =
-    process.env.AZURE_CLIENT_ID;
-
-  const clientSecret =
-    process.env.AZURE_CLIENT_SECRET;
-
-  if (
-    !tenantId ||
-    !clientId ||
-    !clientSecret
-  ) {
-    throw new Error(
-      "AZURE_TENANT_ID, AZURE_CLIENT_ID ou AZURE_CLIENT_SECRET não configurados"
-    );
-  }
-
-  const response =
-    await fetch(
-      `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
-      {
-        method: "POST",
-
-        headers: {
-          "Content-Type":
-            "application/x-www-form-urlencoded"
-        },
-
-        body:
-          new URLSearchParams({
-            client_id:
-              clientId,
-
-            client_secret:
-              clientSecret,
-
-            scope:
-              "https://graph.microsoft.com/.default",
-
-            grant_type:
-              "client_credentials"
-          })
-      }
-    );
-
-  const text =
-    await response.text();
-
-  let data;
-
-  try {
-    data =
-      JSON.parse(text);
-  } catch {
-    data = text;
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      `Erro ao obter token Graph ${response.status}: ${JSON.stringify(data)}`
-    );
-  }
-
-  if (!data?.access_token) {
-    throw new Error(
-      "Microsoft Graph não retornou access_token"
-    );
-  }
-
-  return data.access_token;
-}
-
-
-// ============================================================
-// REQUISIÇÃO GRAPH
-// ============================================================
-
-async function graphRequest({
-  accessToken,
-  url,
-  method = "GET",
-  body = null
-}) {
-  const headers = {
-    Authorization:
-      `Bearer ${accessToken}`,
-
-    Prefer:
-      `outlook.timezone="${GRAPH_TIMEZONE}"`
-  };
-
-  if (body !== null) {
-    headers["Content-Type"] =
-      "application/json";
-  }
-
-  const response =
-    await fetch(
-      url,
-      {
-        method,
-        headers,
-
-        body:
-          body !== null
-            ? JSON.stringify(body)
-            : undefined
-      }
-    );
-
-  if (
-    response.status === 204
-  ) {
-    return {
-      ok: true,
-      status: 204,
-      data: null
-    };
-  }
-
-  const text =
-    await response.text();
-
-  let data;
-
-  try {
-    data =
-      JSON.parse(text);
-  } catch {
-    data = text;
+  let nomeEncontrado = "";
+  const matchNome = corpo.match(/Nome:\s*([^\r\n<]+)/i);
+  if (matchNome) {
+    nomeEncontrado = matchNome[1].trim();
   }
 
   return {
-    ok:
-      response.ok,
-
-    status:
-      response.status,
-
-    data
+    cpf: cpfEncontrado,
+    telefone: telefoneEncontrado,
+    nome: nomeEncontrado
   };
 }
 
+function localizarEventosCpfTelefone(eventos, cpf = "", telefone = "") {
+  const cpfBusca = normalizarTelefone(cpf);
+  const telefoneBusca = canonicalizarTelefone(telefone);
 
-// ============================================================
-// CONSULTA CALENDÁRIO POR INTERVALO
-// ============================================================
+  const temCpfValido = cpfValido(cpfBusca);
+  const temTelefoneValido = telefoneValido(telefoneBusca);
 
-async function consultarCalendarView({
-  accessToken,
-  inicio,
-  fim,
-  select =
-    "id,subject,start,end,isAllDay,bodyPreview,body,webLink"
-}) {
-  let url =
-    `https://graph.microsoft.com/v1.0/users/${MAILBOX_ID}` +
-    `/calendarView` +
-    `?startDateTime=${encodeURIComponent(inicio)}` +
-    `&endDateTime=${encodeURIComponent(fim)}` +
-    `&$top=100` +
-    `&$select=${encodeURIComponent(select)}`;
-
-  const todosEventos = [];
-  let iteracoes = 0;
-  const MAX_ITERACOES = 20; // até 2000 eventos para segurança
-
-  while (url && iteracoes < MAX_ITERACOES) {
-    iteracoes++;
-
-    const resultado =
-      await graphRequest({
-        accessToken,
-        url
-      });
-
-    if (!resultado.ok) {
-      throw new Error(
-        `Erro ao consultar calendário ${resultado.status}: ${JSON.stringify(resultado.data)}`
-      );
-    }
-
-    if (Array.isArray(resultado.data?.value)) {
-      todosEventos.push(...resultado.data.value);
-    }
-
-    // Avança para a próxima página se houver nextLink
-    url = resultado.data?.["@odata.nextLink"] || null;
+  if (!temCpfValido && !temTelefoneValido) {
+    return [];
   }
 
-  return todosEventos;
+  return eventos.filter(evento => {
+    if (evento.isCancelled) return false;
+
+    const meta = extrairMetadadosEvento(evento);
+
+    if (temCpfValido && temTelefoneValido) {
+      return meta.cpf === cpfBusca && meta.telefone === telefoneBusca;
+    }
+
+    if (temCpfValido) {
+      return meta.cpf === cpfBusca;
+    }
+
+    if (temTelefoneValido) {
+      return meta.telefone === telefoneBusca;
+    }
+
+    return false;
+  });
 }
 
+// ============================================================
+// AUXILIARES DE PARSING DO BODY
+// ============================================================
+
+function obterDados(req) {
+  if (req.body && typeof req.body === "object") {
+    return req.body;
+  }
+  if (typeof req.body === "string" && req.body.trim()) {
+    try {
+      return JSON.parse(req.body);
+    } catch {
+      return {};
+    }
+  }
+  return req.query || {};
+}
 
 // ============================================================
-// VERIFICA DISPONIBILIDADE DE UM INTERVALO
+// VERIFICA INTERVALO LIVRE NO CALENDÁRIO M365
 // ============================================================
 
 async function verificarIntervaloLivre({
   accessToken,
+  conexaoM365,
+  fusoHorario = DEFAULT_TIMEZONE,
   data,
   horario,
-  duracaoMinutos =
-    DURACAO_MINUTOS,
+  duracaoMinutos = DURACAO_PADRAO,
   ignorarEventoId = null
 }) {
-  const fimCalculado =
-    somarMinutosLocal(
-      data,
-      horario,
-      duracaoMinutos
-    );
+  const fimCalculado = somarMinutosLocal(data, horario, duracaoMinutos);
+  const mailbox = conexaoM365?.mailbox_email || conexaoM365?.mailboxEmail || LEGACY_MAILBOX_ID;
 
-  const inicioConsulta =
-    `${data}T${horario}:00${OFFSET}`;
+  const inicioConsulta = `${data}T${horario}:00${OFFSET}`;
+  const fimConsulta = `${fimCalculado.data}T${fimCalculado.horario}:00${OFFSET}`;
 
-  const fimConsulta =
-    `${fimCalculado.data}T${fimCalculado.horario}:00${OFFSET}`;
+  const eventos = await graphClient.consultarCalendarView({
+    accessToken,
+    mailboxEmail: mailbox,
+    inicio: inicioConsulta,
+    fim: fimConsulta,
+    fusoHorario
+  });
 
-  const eventos =
-    await consultarCalendarView({
-      accessToken,
-      inicio:
-        inicioConsulta,
-      fim:
-        fimConsulta
-    });
-
-  const conflitos =
-    eventos.filter(
-      (evento) => {
-        if (
-          ignorarEventoId &&
-          evento.id ===
-            ignorarEventoId
-        ) {
-          return false;
-        }
-
-        return true;
-      }
-    );
+  const conflitos = eventos.filter(evento => {
+    if (ignorarEventoId && evento.id === ignorarEventoId) return false;
+    if (evento.isCancelled) return false;
+    return true;
+  });
 
   return {
-    livre:
-      conflitos.length === 0,
-
+    livre: conflitos.length === 0,
     conflitos,
-
-    fim:
-      fimCalculado
+    fim: fimCalculado
   };
 }
 
-
 // ============================================================
-// CONSULTAR DISPONIBILIDADE
+// AÇÃO 1: CONSULTAR DISPONIBILIDADE
 // ============================================================
 
-async function acaoConsultarDisponibilidade({
-  accessToken,
-  dados
-}) {
-  const data =
-    dados.data;
+async function acaoConsultarDisponibilidade({ tenantContext, dados }) {
+  const dataBruta = dados.data;
+  const data = availabilityEngine.normalizarDataEntrada(dataBruta);
 
-  if (!dataValida(data)) {
+  if (!data) {
     return {
       status: 200,
-
       body: {
         success: false,
         acao: "consultar_disponibilidade",
-        data: data || "",
+        data: dataBruta || "",
         disponivel: false,
         quantidade: 0,
         horarios: [],
@@ -703,12 +320,12 @@ async function acaoConsultarDisponibilidade({
     };
   }
 
-  const { dataHoje, horarioHoje } = obterDataHoraAtualSP();
+  const fuso = tenantContext.fusoHorario || DEFAULT_TIMEZONE;
+  const { dataHoje, horarioHoje } = availabilityEngine.obterDataHoraAtualNoFuso(fuso);
 
   if (data < dataHoje) {
     return {
       status: 200,
-
       body: {
         success: false,
         acao: "consultar_disponibilidade",
@@ -721,238 +338,122 @@ async function acaoConsultarDisponibilidade({
     };
   }
 
-  const inicioDia =
-    `${data}T00:00:00${OFFSET}`;
+  // Gera slots candidatos de acordo com as regras da empresa ou fallback legado
+  let slotsCandidatos = [];
 
-  const diaSeguinte =
-    proximoDia(
-      data
-    );
-
-  const fimDia =
-    `${diaSeguinte}T00:00:00${OFFSET}`;
-
-  const eventos =
-    await consultarCalendarView({
-      accessToken,
-      inicio:
-        inicioDia,
-      fim:
-        fimDia,
-
-      select:
-        "id,subject,start,end,isAllDay"
+  if (tenantContext.horarios && tenantContext.horarios.length > 0) {
+    const resSlots = availabilityEngine.gerarSlotsCandidatos({
+      data,
+      fusoHorario: fuso,
+      politica: tenantContext.politica || {},
+      horarios: tenantContext.horarios || [],
+      excecoes: tenantContext.excecoes || []
     });
 
-  function horarioEstaLivre(
-    horario
-  ) {
+    if (!resSlots.valido || resSlots.fechado || resSlots.slots.length === 0) {
+      return {
+        status: 200,
+        body: {
+          success: true,
+          acao: "consultar_disponibilidade",
+          data,
+          disponivel: false,
+          quantidade: 0,
+          horarios: [],
+          horario1: "",
+          horario2: "",
+          horario3: "",
+          horario4: "",
+          mensagem: "Não há horários disponíveis para a data informada. Por favor, escolha outra data."
+        }
+      };
+    }
+    slotsCandidatos = resSlots.slots;
+  } else {
+    // Horários padrão de fallback legado
+    slotsCandidatos = HORARIOS_PADRAO_LEGADO;
+  }
+
+  // Consulta eventos no calendário Microsoft 365 da empresa
+  const conexaoM365 = tenantContext.conexaoM365;
+  const accessToken = await graphClient.obterAccessTokenGraph(conexaoM365);
+  const mailbox = conexaoM365?.mailbox_email || conexaoM365?.mailboxEmail || LEGACY_MAILBOX_ID;
+
+  const diaSeguinte = proximoDia(data);
+  const eventos = await graphClient.consultarCalendarView({
+    accessToken,
+    mailboxEmail: mailbox,
+    inicio: `${data}T00:00:00${OFFSET}`,
+    fim: `${diaSeguinte}T00:00:00${OFFSET}`,
+    fusoHorario: fuso,
+    select: "id,subject,start,end,isAllDay"
+  });
+
+  const duracao = tenantContext.politica?.duracao_minutos || DURACAO_PADRAO;
+  const maxOpcoes = tenantContext.politica?.max_opcoes_retorno || 4;
+
+  function horarioEstaLivre(horario) {
     if (data === dataHoje && horario <= horarioHoje) {
       return false;
     }
 
-    const [hora, minuto] =
-      horario
-        .split(":")
-        .map(Number);
+    const [hora, minuto] = horario.split(":").map(Number);
+    const inicioSlot = new Date(`${data}T${String(hora).padStart(2, "0")}:${String(minuto).padStart(2, "0")}:00${OFFSET}`);
+    const fimSlot = new Date(inicioSlot.getTime() + duracao * 60 * 1000);
 
-    const inicioSlot =
-      new Date(
-        `${data}T${String(hora).padStart(2, "0")}:${String(minuto).padStart(2, "0")}:00${OFFSET}`
-      );
-
-    const fimSlot =
-      new Date(
-        inicioSlot.getTime() +
-        DURACAO_MINUTOS *
-          60 *
-          1000
-      );
-
-    return !eventos.some(
-      (evento) => {
-        if (
-          evento.isAllDay
-        ) {
-          return true;
-        }
-
-        const inicioEvento =
-          new Date(
-            `${evento.start.dateTime}${OFFSET}`
-          );
-
-        const fimEvento =
-          new Date(
-            `${evento.end.dateTime}${OFFSET}`
-          );
-
-        return (
-          inicioSlot <
-            fimEvento &&
-          fimSlot >
-            inicioEvento
-        );
-      }
-    );
+    return !eventos.some(evento => {
+      if (evento.isAllDay) return true;
+      const inicioEvento = new Date(`${evento.start?.dateTime}${OFFSET}`);
+      const fimEvento = new Date(`${evento.end?.dateTime}${OFFSET}`);
+      return inicioSlot < fimEvento && fimSlot > inicioEvento;
+    });
   }
 
-  const horariosLivres =
-    HORARIOS_POSSIVEIS.filter(
-      horarioEstaLivre
-    );
-
-  const selecionados =
-    horariosLivres.slice(
-      0,
-      4
-    );
+  const horariosLivres = slotsCandidatos.filter(horarioEstaLivre);
+  const selecionados = horariosLivres.slice(0, maxOpcoes);
 
   let mensagem;
-
-  if (
-    selecionados.length === 0
-  ) {
-    mensagem =
-      "Não encontrei horários disponíveis para essa data.";
-  } else if (
-    selecionados.length === 1
-  ) {
-    mensagem =
-      `Tenho disponibilidade às ${falarHorario(selecionados[0])}.`;
+  if (selecionados.length === 0) {
+    mensagem = "Não há horários disponíveis para a data informada. Por favor, escolha outra data.";
+  } else if (selecionados.length === 1) {
+    mensagem = `Encontrei um horário disponível. Para ${falarHorario(selecionados[0])}, pressione 1.`;
   } else {
-    const falados =
-      selecionados.map(
-        falarHorario
-      );
-
-    const ultimo =
-      falados.pop();
-
-    mensagem =
-      `Tenho disponibilidade às ${falados.join(", ")} ou ${ultimo}.`;
+    const partes = selecionados.map((h, index) => `Para ${falarHorario(h)}, pressione ${index + 1}.`);
+    mensagem = `Encontrei ${selecionados.length} horários disponíveis. ${partes.join(" ")}`;
   }
 
   return {
     status: 200,
-
     body: {
       success: true,
-
-      acao:
-        "consultar_disponibilidade",
-
+      acao: "consultar_disponibilidade",
       data,
-
-      disponivel:
-        horariosLivres.length > 0,
-
-      quantidade:
-        horariosLivres.length,
-
-      horario1:
-        selecionados[0] || "",
-
-      horario2:
-        selecionados[1] || "",
-
-      horario3:
-        selecionados[2] || "",
-
-      horario4:
-        selecionados[3] || "",
-
-      horarios:
-        horariosLivres,
-
+      disponivel: selecionados.length > 0,
+      quantidade: selecionados.length,
+      horarios: selecionados,
+      horario1: selecionados[0] || "",
+      horario2: selecionados[1] || "",
+      horario3: selecionados[2] || "",
+      horario4: selecionados[3] || "",
       mensagem
     }
   };
 }
 
-
 // ============================================================
-// EXTRAÇÃO E CORRESPONDÊNCIA SEGURA DE CPF E TELEFONE
-// ============================================================
-
-function extrairCpfDoEvento(evento) {
-  const content = String(evento?.body?.content || evento?.bodyPreview || "");
-  const match = content.match(/CPF:\s*([\d\s.-]+)/i);
-  if (match) {
-    const limpo = normalizarTelefone(match[1]);
-    if (limpo.length === 11) {
-      return limpo;
-    }
-  }
-  return null;
-}
-
-function extrairTelefoneDoEvento(evento) {
-  const content = String(evento?.body?.content || evento?.bodyPreview || "");
-  const match = content.match(/Telefone:\s*([^\r\n]+)/i);
-  if (match) {
-    const limpo = canonicalizarTelefone(match[1]);
-    if (limpo.length >= 10 && limpo.length <= 11) {
-      return limpo;
-    }
-  }
-  return null;
-}
-
-function localizarEventosCpfTelefone(
-  eventos,
-  cpfEsperado,
-  telefoneEsperado
-) {
-  const cpfNorm = cpfValido(cpfEsperado) ? normalizarTelefone(cpfEsperado) : null;
-  const telNorm = telefoneValido(telefoneEsperado) ? canonicalizarTelefone(telefoneEsperado) : null;
-
-  // Se nenhum identificador válido for informado, rejeita
-  if (!cpfNorm && !telNorm) {
-    return [];
-  }
-
-  return eventos.filter((evento) => {
-    const cpfEvento = extrairCpfDoEvento(evento);
-    const telEvento = extrairTelefoneDoEvento(evento);
-
-    // Se ambos foram informados na busca, ambos devem pertencer obrigatoriamente ao mesmo evento
-    if (cpfNorm && telNorm) {
-      return cpfEvento === cpfNorm && telEvento === telNorm;
-    }
-
-    // Se somente o CPF foi informado
-    if (cpfNorm) {
-      return cpfEvento === cpfNorm;
-    }
-
-    // Se somente o Telefone foi informado
-    if (telNorm) {
-      return telEvento === telNorm;
-    }
-
-    return false;
-  });
-}
-
-
-// ============================================================
-// CONSULTAR AGENDAMENTOS DO CLIENTE
+// AÇÃO 2: CONSULTAR AGENDAMENTOS
 // ============================================================
 
-async function acaoConsultarAgendamentos({
-  accessToken,
-  dados
-}) {
-  const telefone =
-    normalizarTelefone(dados.telefone);
-  const cpf =
-    normalizarTelefone(dados.cpf);
+async function acaoConsultarAgendamentos({ tenantContext, dados }) {
+  const fuso = tenantContext.fusoHorario || DEFAULT_TIMEZONE;
+  const { dataHoje, horarioHoje } = availabilityEngine.obterDataHoraAtualNoFuso(fuso);
+
+  const telefone = normalizarTelefone(dados.telefone);
+  const cpf = normalizarTelefone(dados.cpf);
 
   if (!telefone && !cpf) {
     return {
       status: 200,
-
       body: {
         success: false,
         acao: "consultar_agendamentos",
@@ -961,57 +462,51 @@ async function acaoConsultarAgendamentos({
     };
   }
 
-  const { dataHoje, horarioHoje } = obterDataHoraAtualSP();
+  const conexaoM365 = tenantContext.conexaoM365;
+  const accessToken = await graphClient.obterAccessTokenGraph(conexaoM365);
+  const mailbox = conexaoM365?.mailbox_email || conexaoM365?.mailboxEmail || LEGACY_MAILBOX_ID;
 
-  // Início do dia atual em SP para cobrir todos os eventos de hoje
+  // Consulta de hoje até 365 dias
   const inicio = `${dataHoje}T00:00:00${OFFSET}`;
-
   const limite = new Date();
   limite.setUTCDate(limite.getUTCDate() + 365);
   const fim = limite.toISOString();
 
-  const eventos =
-    await consultarCalendarView({
-      accessToken,
-      inicio,
-      fim
+  const eventos = await graphClient.consultarCalendarView({
+    accessToken,
+    mailboxEmail: mailbox,
+    inicio,
+    fim,
+    fusoHorario: fuso
+  });
+
+  const encontrados = localizarEventosCpfTelefone(eventos, cpf, telefone);
+
+  const todosAgendamentos = encontrados
+    .map(evento => {
+      const data = evento?.start?.dateTime?.substring(0, 10) || "";
+      const horario = evento?.start?.dateTime?.substring(11, 16) || "";
+
+      return {
+        id: evento.id,
+        subject: evento.subject,
+        data,
+        horario,
+        dataFalado: formatarDataFalada(evento?.start?.dateTime),
+        dataCurtaFalado: formatarDataCurtaFalada(evento?.start?.dateTime),
+        horarioFalado: falarHorario(horario),
+        inicio: evento?.start?.dateTime,
+        fim: evento?.end?.dateTime
+      };
+    })
+    .filter(item => {
+      if (!item.data || !item.horario) return false;
+      if (item.data < dataHoje) return false;
+      if (item.data === dataHoje && item.horario <= horarioHoje) return false;
+      return true;
     });
 
-  const encontrados =
-    localizarEventosCpfTelefone(
-      eventos,
-      cpf,
-      telefone
-    );
-
-  const todosAgendamentos =
-    encontrados
-      .map((evento) => {
-        const data =
-          evento?.start?.dateTime?.substring(0, 10) || "";
-        const horario =
-          evento?.start?.dateTime?.substring(11, 16) || "";
-
-        return {
-          id: evento.id,
-          subject: evento.subject,
-          data,
-          horario,
-          dataFalado: formatarDataFalada(evento?.start?.dateTime),
-          dataCurtaFalado: formatarDataCurtaFalada(evento?.start?.dateTime),
-          horarioFalado: falarHorario(horario),
-          inicio: evento?.start?.dateTime,
-          fim: evento?.end?.dateTime
-        };
-      })
-      .filter((item) => {
-        if (!item.data || !item.horario) return false;
-        if (item.data < dataHoje) return false;
-        if (item.data === dataHoje && item.horario <= horarioHoje) return false;
-        return true;
-      });
-
-  // Ordenar do mais próximo para o mais distante
+  // Ordena cronologicamente
   todosAgendamentos.sort((a, b) => {
     if (a.data !== b.data) return a.data.localeCompare(b.data);
     return a.horario.localeCompare(b.horario);
@@ -1020,7 +515,6 @@ async function acaoConsultarAgendamentos({
   const agendamentos = todosAgendamentos.slice(0, 4);
 
   let mensagem;
-
   if (agendamentos.length === 0) {
     mensagem = "Não encontrei nenhum agendamento futuro em seu cadastro.";
   } else if (agendamentos.length === 1) {
@@ -1039,108 +533,56 @@ async function acaoConsultarAgendamentos({
 
   return {
     status: 200,
-
     body: {
       success: true,
-
-      acao:
-        "consultar_agendamentos",
-
-      telefone: dados.telefone || "",
-      cpf: dados.cpf || "",
-
-      quantidade:
-        agendamentos.length,
-
-      evento1Id:
-        agendamentos[0]?.id ||
-        "",
-
-      evento1Data:
-        agendamentos[0]?.data ||
-        "",
-
-      evento1Horario:
-        agendamentos[0]?.horario ||
-        "",
-
-      evento2Id:
-        agendamentos[1]?.id ||
-        "",
-
-      evento2Data:
-        agendamentos[1]?.data ||
-        "",
-
-      evento2Horario:
-        agendamentos[1]?.horario ||
-        "",
-
-      evento3Id:
-        agendamentos[2]?.id ||
-        "",
-
-      evento3Data:
-        agendamentos[2]?.data ||
-        "",
-
-      evento3Horario:
-        agendamentos[2]?.horario ||
-        "",
-
-      evento4Id:
-        agendamentos[3]?.id ||
-        "",
-
-      evento4Data:
-        agendamentos[3]?.data ||
-        "",
-
-      evento4Horario:
-        agendamentos[3]?.horario ||
-        "",
-
+      acao: "consultar_agendamentos",
+      quantidade: agendamentos.length,
+      evento1Id: agendamentos[0]?.id || "",
+      evento1Data: agendamentos[0]?.data || "",
+      evento1Horario: agendamentos[0]?.horario || "",
+      evento2Id: agendamentos[1]?.id || "",
+      evento2Data: agendamentos[1]?.data || "",
+      evento2Horario: agendamentos[1]?.horario || "",
+      evento3Id: agendamentos[2]?.id || "",
+      evento3Data: agendamentos[2]?.data || "",
+      evento3Horario: agendamentos[2]?.horario || "",
+      evento4Id: agendamentos[3]?.id || "",
+      evento4Data: agendamentos[3]?.data || "",
+      evento4Horario: agendamentos[3]?.horario || "",
       agendamentos,
-
       mensagem
     }
   };
 }
 
-
 // ============================================================
-// AGENDAR
+// AÇÃO 3: AGENDAR
 // ============================================================
 
-async function acaoAgendar({
-  accessToken,
-  dados
-}) {
-  const data =
-    dados.data;
+async function acaoAgendar({ tenantContext, dados }) {
+  const dataBruta = dados.data;
+  const data = availabilityEngine.normalizarDataEntrada(dataBruta) || dataBruta;
+  const horario = dados.horario;
+  const fuso = tenantContext.fusoHorario || DEFAULT_TIMEZONE;
 
-  const horario =
-    dados.horario;
+  const validacao = validarDataEHorarioFuturoNoFuso(data, horario, fuso);
+  if (!validacao.valido) {
+    return {
+      status: 200,
+      body: {
+        success: false,
+        acao: "agendar",
+        data: data || "",
+        horario: horario || "",
+        mensagem: validacao.erro
+      }
+    };
+  }
 
-  const nome =
-    dados.nome ||
-    "Cliente GoTo";
-
-  const cpf =
-    dados.cpf ||
-    "";
-
-  const telefone =
-    dados.telefone ||
-    "";
-
-  const conversationSpaceId =
-    dados.conversationSpaceId ||
-    "";
-
-  const callReason =
-    dados.callReason ||
-    "";
+  const nome = dados.nome || "Cliente";
+  const telefone = dados.telefone || "";
+  const cpf = dados.cpf || "";
+  const conversationSpaceId = dados.conversationSpaceId || "";
 
   console.log("===== API AGENDAMENTO =====");
   console.log("AÇÃO: agendar");
@@ -1150,27 +592,15 @@ async function acaoAgendar({
   console.log(`TELEFONE MASCARADO: ${mascararTelefone(telefone)}`);
   console.log(`CPF MASCARADO: ${mascararCpf(cpf)}`);
 
-  const validacao = validarDataEHorarioFuturo(data, horario);
-  if (!validacao.valido) {
-    return {
-      status: 200,
+  const conexaoM365 = tenantContext.conexaoM365;
+  const accessToken = await graphClient.obterAccessTokenGraph(conexaoM365);
+  const mailbox = conexaoM365?.mailbox_email || conexaoM365?.mailboxEmail || LEGACY_MAILBOX_ID;
 
-      body: {
-        success: false,
-        acao: "agendar",
-        mensagem: validacao.erro
-      }
-    };
-  }
-
-  // Prevenção de duplicidade: se o cliente já tiver agendamento idêntico nessa data e horário
-  if (cpf || telefone) {
+  // 1. Idempotência: verificar se o cliente já possui agendamento idêntico
+  if (telefone || cpf) {
     const consulta = await acaoConsultarAgendamentos({
-      accessToken,
-      dados: {
-        cpf,
-        telefone
-      }
+      tenantContext,
+      dados: { cpf, telefone }
     });
 
     const existentes = consulta.body?.agendamentos || [];
@@ -1191,18 +621,21 @@ async function acaoAgendar({
     }
   }
 
-  const disponibilidade =
-    await verificarIntervaloLivre({
-      accessToken,
-      data,
-      horario
-    });
+  // 2. Verificar se o intervalo está livre
+  const duracao = tenantContext.politica?.duracao_minutos || DURACAO_PADRAO;
+  const disponibilidade = await verificarIntervaloLivre({
+    accessToken,
+    conexaoM365,
+    fusoHorario: fuso,
+    data,
+    horario,
+    duracaoMinutos: duracao
+  });
 
   if (!disponibilidade.livre) {
     console.log("Horário indisponível.");
     return {
       status: 200,
-
       body: {
         success: false,
         acao: "agendar",
@@ -1215,13 +648,8 @@ async function acaoAgendar({
   console.log("Horário disponível.");
   console.log("Criando evento no Microsoft Graph...");
 
-  const inicio =
-    `${data}T${horario}:00`;
-
-  const fim =
-    disponibilidade
-      .fim
-      .dateTime;
+  const inicio = `${data}T${horario}:00`;
+  const fim = disponibilidade.fim.dateTime;
 
   function formatarCpf(c) {
     const cLimpo = normalizarTelefone(c);
@@ -1230,11 +658,12 @@ async function acaoAgendar({
     }
     return c;
   }
-  
-  const cpfFormatado = cpf ? formatarCpf(cpf) : "";
 
+  const cpfFormatado = cpf ? formatarCpf(cpf) : "";
   const partesData = data.split("-");
   const dataExibicao = partesData.length === 3 ? `${partesData[2]}/${partesData[1]}/${partesData[0]}` : data;
+
+  const callReason = dados.callReason || dados.motivo || "";
 
   const descricao = [
     "Agendamento criado automaticamente pela integração GoTo.",
@@ -1253,139 +682,59 @@ async function acaoAgendar({
     .join("\n");
 
   const evento = {
-    subject:
-      `Agendamento GoTo - ${nome}`,
-
+    subject: `Agendamento GoTo - ${nome}`,
     body: {
-      contentType:
-        "Text",
-
-      content:
-        descricao
+      contentType: "Text",
+      content: descricao
     },
-
     start: {
-      dateTime:
-        inicio,
-
-      timeZone:
-        GRAPH_TIMEZONE
+      dateTime: inicio,
+      timeZone: GRAPH_TIMEZONE_NAME
     },
-
     end: {
-      dateTime:
-        fim,
-
-      timeZone:
-        GRAPH_TIMEZONE
+      dateTime: fim,
+      timeZone: GRAPH_TIMEZONE_NAME
     },
-
-    showAs:
-      "busy"
+    showAs: "busy"
   };
 
-  const resultado =
-    await graphRequest({
-      accessToken,
-
-      url:
-        `https://graph.microsoft.com/v1.0/users/${MAILBOX_ID}/events`,
-
-      method:
-        "POST",
-
-      body:
-        evento
-    });
-
-  if (!resultado.ok) {
-    console.error("Erro ao criar evento Graph:", JSON.stringify(resultado.data));
-    return {
-      status: 502,
-
-      body: {
-        success: false,
-        acao: "agendar",
-        error:
-          "Erro ao criar agendamento no sistema. Por favor, tente novamente mais tarde."
-      }
-    };
-  }
+  const eventoCriado = await graphClient.criarEvento({
+    accessToken,
+    mailboxEmail: mailbox,
+    evento,
+    fusoHorario: fuso
+  });
 
   console.log("Evento criado com sucesso.");
-  console.log(`EVENTO ID MASCARADO: ${mascararEventoId(resultado.data?.id)}`);
+  console.log(`EVENTO ID MASCARADO: ${mascararEventoId(eventoCriado?.id)}`);
   console.log(`DATA: ${data}`);
   console.log(`HORÁRIO: ${horario}`);
   console.log(`NOME MASCARADO: ${mascararNome(nome)}`);
 
   return {
     status: 200,
-
     body: {
       success: true,
-
-      acao:
-        "agendar",
-
+      acao: "agendar",
       data,
-
       horario,
-
-      eventoId:
-        resultado.data?.id ||
-        "",
-
-      webLink:
-        resultado.data?.webLink ||
-        "",
-
-      mensagem:
-        `Agendamento realizado para ${formatarDataFalada(data)} às ${falarHorario(horario)}.`
+      eventoId: eventoCriado?.id || "",
+      webLink: eventoCriado?.webLink || "",
+      mensagem: `Agendamento realizado para ${formatarDataFalada(data)} às ${falarHorario(horario)}.`
     }
   };
 }
 
-
 // ============================================================
-// BUSCA EVENTO ESPECÍFICO
-// ============================================================
-
-async function obterEvento({
-  accessToken,
-  eventoId
-}) {
-  const resultado =
-    await graphRequest({
-      accessToken,
-
-      url:
-        `https://graph.microsoft.com/v1.0/users/${MAILBOX_ID}/events/${encodeURIComponent(eventoId)}`
-    });
-
-  if (!resultado.ok) {
-    return null;
-  }
-
-  return resultado.data;
-}
-
-
-// ============================================================
-// CANCELAR
+// AÇÃO 4: CANCELAR
 // ============================================================
 
-async function acaoCancelar({
-  accessToken,
-  dados
-}) {
+async function acaoCancelar({ tenantContext, dados }) {
   const telefone = normalizarTelefone(dados.telefone);
   const cpf = normalizarTelefone(dados.cpf);
 
-  let data = dados.data || "";
-  if (data) {
-    const dMatch = data.match(/(\d{4}-\d{2}-\d{2})/);
-    if (dMatch) data = dMatch[1];
-  }
+  const dataBruta = dados.data || "";
+  const data = availabilityEngine.normalizarDataEntrada(dataBruta) || dataBruta;
 
   let horario = dados.horario || "";
   if (horario) {
@@ -1404,7 +753,7 @@ async function acaoCancelar({
     };
   }
 
-  if (!dataValida(data) || !horarioValido(horario)) {
+  if (!availabilityEngine.dataValida(data) || !availabilityEngine.horarioValido(horario)) {
     return {
       status: 200,
       body: {
@@ -1417,11 +766,8 @@ async function acaoCancelar({
 
   // Consultar compromissos futuros do cliente
   const consulta = await acaoConsultarAgendamentos({
-    accessToken,
-    dados: {
-      telefone,
-      cpf
-    }
+    tenantContext,
+    dados: { telefone, cpf }
   });
 
   const agendamentos = consulta.body?.agendamentos || [];
@@ -1454,24 +800,15 @@ async function acaoCancelar({
   }
 
   const eventoAlvo = correspondentes[0];
+  const conexaoM365 = tenantContext.conexaoM365;
+  const accessToken = await graphClient.obterAccessTokenGraph(conexaoM365);
+  const mailbox = conexaoM365?.mailbox_email || conexaoM365?.mailboxEmail || LEGACY_MAILBOX_ID;
 
-  const resultado = await graphRequest({
+  await graphClient.cancelarEvento({
     accessToken,
-    url: `https://graph.microsoft.com/v1.0/users/${MAILBOX_ID}/events/${encodeURIComponent(eventoAlvo.id)}`,
-    method: "DELETE"
+    mailboxEmail: mailbox,
+    eventoId: eventoAlvo.id
   });
-
-  if (!resultado.ok) {
-    console.error("Erro ao cancelar evento Graph:", JSON.stringify(resultado.data));
-    return {
-      status: 502,
-      body: {
-        success: false,
-        acao: "cancelar",
-        error: "Erro ao cancelar agendamento no sistema. Por favor, tente novamente mais tarde."
-      }
-    };
-  }
 
   return {
     status: 200,
@@ -1485,23 +822,16 @@ async function acaoCancelar({
   };
 }
 
-
 // ============================================================
-// REAGENDAR
+// AÇÃO 5: REAGENDAR
 // ============================================================
 
-async function acaoReagendar({
-  accessToken,
-  dados
-}) {
+async function acaoReagendar({ tenantContext, dados }) {
   const telefone = normalizarTelefone(dados.telefone);
   const cpf = normalizarTelefone(dados.cpf);
 
   let dataAnterior = dados.dataAnterior || dados.data_anterior || "";
-  if (dataAnterior) {
-    const dMatch = dataAnterior.match(/(\d{4}-\d{2}-\d{2})/);
-    if (dMatch) dataAnterior = dMatch[1];
-  }
+  dataAnterior = availabilityEngine.normalizarDataEntrada(dataAnterior) || dataAnterior;
 
   let horarioAnterior = dados.horarioAnterior || dados.horario_anterior || "";
   if (horarioAnterior) {
@@ -1510,10 +840,7 @@ async function acaoReagendar({
   }
 
   let novaData = dados.novaData || dados.nova_data || dados.data || "";
-  if (novaData) {
-    const ndMatch = novaData.match(/(\d{4}-\d{2}-\d{2})/);
-    if (ndMatch) novaData = ndMatch[1];
-  }
+  novaData = availabilityEngine.normalizarDataEntrada(novaData) || novaData;
 
   let novoHorario = dados.novoHorario || dados.novo_horario || dados.horario || "";
   if (novoHorario) {
@@ -1532,7 +859,7 @@ async function acaoReagendar({
     };
   }
 
-  if (!dataValida(dataAnterior) || !horarioValido(horarioAnterior)) {
+  if (!availabilityEngine.dataValida(dataAnterior) || !availabilityEngine.horarioValido(horarioAnterior)) {
     return {
       status: 200,
       body: {
@@ -1543,7 +870,8 @@ async function acaoReagendar({
     };
   }
 
-  const validacaoNovo = validarDataEHorarioFuturo(novaData, novoHorario);
+  const fuso = tenantContext.fusoHorario || DEFAULT_TIMEZONE;
+  const validacaoNovo = validarDataEHorarioFuturoNoFuso(novaData, novoHorario, fuso);
   if (!validacaoNovo.valido) {
     return {
       status: 200,
@@ -1555,18 +883,14 @@ async function acaoReagendar({
     };
   }
 
-  // 1. Localizar exatamente o compromisso antigo
   const consulta = await acaoConsultarAgendamentos({
-    accessToken,
-    dados: {
-      telefone,
-      cpf
-    }
+    tenantContext,
+    dados: { telefone, cpf }
   });
 
   const agendamentos = consulta.body?.agendamentos || [];
 
-  // Idempotência: se já estiver reagendado para essa nova data e novo horário
+  // Idempotência
   const jaReagendado = agendamentos.find(
     a => a.data === novaData && a.horario === novoHorario
   );
@@ -1604,20 +928,25 @@ async function acaoReagendar({
       body: {
         success: false,
         acao: "reagendar",
-        mensagem: "Encontrei mais de um agendamento no mesmo horário anterior. Por favor, fale com um atendente."
+        mensagem: "Encontrei mais de um agendamento no horário anterior. Por favor, fale com um atendente."
       }
     };
   }
 
-  const eventoAlvo = correspondentes[0];
-  const eventoId = eventoAlvo.id;
+  const eventoAnterior = correspondentes[0];
+  const duracao = tenantContext.politica?.duracao_minutos || DURACAO_PADRAO;
+  const conexaoM365 = tenantContext.conexaoM365;
+  const accessToken = await graphClient.obterAccessTokenGraph(conexaoM365);
+  const mailbox = conexaoM365?.mailbox_email || conexaoM365?.mailboxEmail || LEGACY_MAILBOX_ID;
 
-  // 2. Validar se a nova data e o novo horário estão disponíveis imediatamente antes da alteração
   const disponibilidade = await verificarIntervaloLivre({
     accessToken,
+    conexaoM365,
+    fusoHorario: fuso,
     data: novaData,
     horario: novoHorario,
-    ignorarEventoId: eventoId
+    duracaoMinutos: duracao,
+    ignorarEventoId: eventoAnterior.id
   });
 
   if (!disponibilidade.livre) {
@@ -1631,72 +960,24 @@ async function acaoReagendar({
     };
   }
 
-  // 3. Obter evento atual para manter integridade do corpo
-  const eventoAtual = await obterEvento({
+  const novoFim = disponibilidade.fim.dateTime;
+
+  await graphClient.atualizarEvento({
     accessToken,
-    eventoId
-  });
-
-  if (!eventoAtual) {
-    return {
-      status: 200,
-      body: {
-        success: false,
-        acao: "reagendar",
-        mensagem: "O evento não foi encontrado no calendário para ser reagendado."
+    mailboxEmail: mailbox,
+    eventoId: eventoAnterior.id,
+    alteracoes: {
+      start: {
+        dateTime: `${novaData}T${novoHorario}:00`,
+        timeZone: GRAPH_TIMEZONE_NAME
+      },
+      end: {
+        dateTime: novoFim,
+        timeZone: GRAPH_TIMEZONE_NAME
       }
-    };
-  }
-
-  const inicio = `${novaData}T${novoHorario}:00`;
-  const fim = disponibilidade.fim.dateTime;
-
-  const partesData = novaData.split("-");
-  const dataExibicao = partesData.length === 3 ? `${partesData[2]}/${partesData[1]}/${partesData[0]}` : novaData;
-
-  const bodyContentRegex = /Data:\s*[\d/]+\r?\nHorário:\s*\d{2}:\d{2}/i;
-  const novoBodyText = `Data: ${dataExibicao}\nHorário: ${novoHorario}`;
-
-  let novoBodyContent = eventoAtual.body?.content || "";
-  if (bodyContentRegex.test(novoBodyContent)) {
-    novoBodyContent = novoBodyContent.replace(bodyContentRegex, novoBodyText);
-  } else {
-    novoBodyContent += `\n\n[REAGENDADO] Nova Data: ${dataExibicao} - Novo Horário: ${novoHorario}`;
-  }
-
-  const patch = {
-    start: {
-      dateTime: inicio,
-      timeZone: GRAPH_TIMEZONE
     },
-    end: {
-      dateTime: fim,
-      timeZone: GRAPH_TIMEZONE
-    },
-    body: {
-      contentType: "Text",
-      content: novoBodyContent
-    }
-  };
-
-  const resultado = await graphRequest({
-    accessToken,
-    url: `https://graph.microsoft.com/v1.0/users/${MAILBOX_ID}/events/${encodeURIComponent(eventoId)}`,
-    method: "PATCH",
-    body: patch
+    fusoHorario: fuso
   });
-
-  if (!resultado.ok) {
-    console.error("Erro ao reagendar evento Graph:", JSON.stringify(resultado.data));
-    return {
-      status: 502,
-      body: {
-        success: false,
-        acao: "reagendar",
-        error: "Erro ao reagendar compromisso no sistema. Por favor, tente novamente mais tarde."
-      }
-    };
-  }
 
   return {
     status: 200,
@@ -1710,237 +991,247 @@ async function acaoReagendar({
   };
 }
 
+// ============================================================
+// CONSTRUÇÃO DO CONTEXTO DE FALLBACK (CLIENTE LEGADO)
+// ============================================================
+
+function construirContextoLegado() {
+  return {
+    empresa: {
+      id: "legacy-brasinfo",
+      nome: "Brasinfo TI",
+      slug: "brasinfo-ti",
+      fuso_horario: DEFAULT_TIMEZONE,
+      ativo: true
+    },
+    fusoHorario: DEFAULT_TIMEZONE,
+    conexaoM365: {
+      azure_tenant_id: process.env.AZURE_TENANT_ID,
+      azure_client_id: process.env.AZURE_CLIENT_ID,
+      clientSecret: process.env.AZURE_CLIENT_SECRET,
+      mailbox_email: LEGACY_MAILBOX_ID
+    },
+    politica: {
+      duracao_minutos: 60,
+      intervalo_entre_slots: 60,
+      max_opcoes_retorno: 4
+    },
+    horarios: [
+      { dia_semana: 1, fechado: false, faixas: [{ horaInicio: "09:00", horaFim: "17:00" }] },
+      { dia_semana: 2, fechado: false, faixas: [{ horaInicio: "09:00", horaFim: "17:00" }] },
+      { dia_semana: 3, fechado: false, faixas: [{ horaInicio: "09:00", horaFim: "17:00" }] },
+      { dia_semana: 4, fechado: false, faixas: [{ horaInicio: "09:00", horaFim: "17:00" }] },
+      { dia_semana: 5, fechado: false, faixas: [{ horaInicio: "09:00", horaFim: "17:00" }] }
+    ],
+    excecoes: []
+  };
+}
 
 // ============================================================
-// HANDLER PRINCIPAL
+// HANDLER PRINCIPAL /api/agendamento
 // ============================================================
 
-module.exports =
-  async function handler(
-    req,
-    res
-  ) {
+module.exports = async function handler(req, res) {
+  try {
+    if (req.method === "OPTIONS") {
+      return res.status(200).end();
+    }
+
+    if (req.method !== "POST" && req.method !== "GET") {
+      return res.status(405).json({
+        success: false,
+        error: "Método não permitido. Utilize POST."
+      });
+    }
+
+    // ========================================================
+    // AUTENTICAÇÃO E RESOLUÇÃO DE TENANT POR X-API-KEY
+    // ========================================================
+
+    const apiKey = req.headers["x-api-key"] || req.query.apiKey;
+
+    if (!apiKey) {
+      return res.status(401).json({
+        success: false,
+        error: "API Key inválida"
+      });
+    }
+
+    let tenantContext = null;
+    let falhaBanco = false;
+
+    // 1. Tenta resolver empresa no repositório de banco
     try {
-      // ========================================================
-      // GET E POST
-      // ========================================================
-
-      if (
-        req.method !== "GET" &&
-        req.method !== "POST"
-      ) {
-        return res
-          .status(405)
-          .json({
-            success: false,
-
-            error:
-              "Método não permitido. Use GET ou POST."
-          });
-      }
-
-      // ========================================================
-      // API KEY
-      // ========================================================
-
-      const apiKey =
-        req.headers[
-          "x-api-key"
-        ];
-
-      const expectedKey =
-        process.env
-          .GOTO_API_KEY;
-
-      if (!expectedKey) {
-        return res
-          .status(500)
-          .json({
-            success: false,
-
-            error:
-              "GOTO_API_KEY não configurada no servidor"
-          });
-      }
-
-      if (
-        !apiKey ||
-        apiKey !== expectedKey
-      ) {
-        return res
-          .status(401)
-          .json({
-            success: false,
-
-            error:
-              "API Key inválida"
-          });
-      }
-
-      // ========================================================
-      // DADOS
-      // ========================================================
-
-      const dados =
-        obterDados(
-          req
-        );
-
-      const acao =
-        normalizarTexto(
-          dados.acao
-        )
-          .replace(/\s+/g, "_");
-
-      if (!acao) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-
-            error:
-              "Ação não informada",
-
-            acoesDisponiveis: [
-              "consultar_disponibilidade",
-              "consultar_agendamentos",
-              "agendar",
-              "cancelar",
-              "reagendar"
-            ]
-          });
-      }
-
-      // Registro seguro e mascarado (sem PII aberta nem chaves)
-      console.log(
-        "AGENDAMENTO API:",
-        JSON.stringify({
-          acao,
-          telefone: mascararTelefone(dados.telefone),
-          cpf: mascararCpf(dados.cpf),
-          data: dados.data || dados.novaData || dados.dataAnterior || null,
-          horario: dados.horario || dados.novoHorario || dados.horarioAnterior || null
-        })
-      );
-
-      // ========================================================
-      // TOKEN GRAPH
-      // ========================================================
-
-      const accessToken =
-        await obterAccessTokenGraph();
-
-      let resultado;
-
-      // ========================================================
-      // ROTEAMENTO
-      // ========================================================
-
-      switch (acao) {
-
-        case "consultar_disponibilidade":
-        case "disponibilidade":
-
-          resultado =
-            await acaoConsultarDisponibilidade({
-              accessToken,
-              dados
-            });
-
-          break;
-
-
-        case "consultar_agendamentos":
-        case "listar_agendamentos":
-        case "agendamentos":
-
-          resultado =
-            await acaoConsultarAgendamentos({
-              accessToken,
-              dados
-            });
-
-          break;
-
-
-        case "agendar":
-
-          resultado =
-            await acaoAgendar({
-              accessToken,
-              dados
-            });
-
-          break;
-
-
-        case "cancelar":
-
-          resultado =
-            await acaoCancelar({
-              accessToken,
-              dados
-            });
-
-          break;
-
-
-        case "reagendar":
-        case "remarcar":
-
-          resultado =
-            await acaoReagendar({
-              accessToken,
-              dados
-            });
-
-          break;
-
-
-        default:
-
-          return res
-            .status(400)
-            .json({
-              success: false,
-
-              error:
-                `Ação desconhecida: ${acao}`,
-
-              acoesDisponiveis: [
-                "consultar_disponibilidade",
-                "consultar_agendamentos",
-                "agendar",
-                "cancelar",
-                "reagendar"
-              ]
-            });
-      }
-
-      return res
-        .status(
-          resultado.status
-        )
-        .json(
-          resultado.body
-        );
-
-    } catch (error) {
-      console.error(
-        "Erro /api/agendamento:",
-        error.message
-      );
-
-      const isGraphError = String(error.message || "").includes("Graph") || String(error.message || "").includes("calendário");
-      const statusCode = isGraphError ? 502 : 500;
-
-      return res
-        .status(statusCode)
-        .json({
+      const resolucao = await empresaRepo.obterEmpresaPorApiKey(apiKey);
+      if (resolucao?.erro === "Empresa desativada") {
+        return res.status(403).json({
           success: false,
+          error: "Empresa desativada"
+        });
+      }
 
-          error:
-            "Ocorreu um erro interno ao processar a solicitação no sistema. Por favor, tente novamente mais tarde."
+      if (resolucao?.empresa) {
+        // Rate limit atômico por empresa
+        const rl = await verificarRateLimitEmpresa(resolucao.empresa.id);
+        if (!rl.permitido) {
+          return res.status(429).json({
+            success: false,
+            error: "Limite de requisições excedido. Tente novamente em instantes."
+          });
+        }
+
+        tenantContext = await empresaRepo.obterTenantContext(resolucao.empresa.id);
+      }
+    } catch (errDb) {
+      falhaBanco = true;
+      console.error("Falha técnica no banco de dados durante resolução de API key:", errDb.message);
+    }
+
+    // 2. Comportamento rigoroso de fallback e fail-safe
+    const chaveLegada = process.env.GOTO_API_KEY;
+    const ehChaveLegadaExata = chaveLegada && compararHashesSeguro(hashChaveGoTo(apiKey), hashChaveGoTo(chaveLegada));
+
+    if (falhaBanco) {
+      // Se o banco falhou:
+      // - Somente a chave legada exata pode utilizar o contexto legado
+      // - Chaves desconhecidas ou de outras empresas NUNCA caem no tenant legado e recebem 503 técnico
+      if (ehChaveLegadaExata) {
+        tenantContext = construirContextoLegado();
+      } else {
+        return res.status(503).json({
+          success: false,
+          error: "Erro de serviço temporário: banco de dados indisponível. Tente novamente em instantes."
+        });
+      }
+    } else if (!tenantContext) {
+      // Banco respondeu normalmente, mas a chave não foi encontrada:
+      if (ehChaveLegadaExata) {
+        tenantContext = construirContextoLegado();
+      } else {
+        return res.status(401).json({
+          success: false,
+          error: "API Key inválida"
+        });
+      }
+    }
+
+    if (!tenantContext) {
+      return res.status(401).json({
+        success: false,
+        error: "API Key inválida"
+      });
+    }
+
+    // Validação de conexão M365 ativa
+    if (tenantContext.conexaoM365 && (tenantContext.conexaoM365.status_conexao === "desativado" || tenantContext.conexaoM365.ativo === false)) {
+      return res.status(503).json({
+        success: false,
+        error: "Conexão Microsoft 365 da empresa está desativada. Contate o suporte administrativo."
+      });
+    }
+
+    // ========================================================
+    // PARSING DE DADOS DA REQUISIÇÃO (BLOQUEIA EMPRESA_ID NO PAYLOAD)
+    // ========================================================
+
+    const dados = obterDados(req);
+    // Segurança estrita: o tenant é determinado unicamente pela chave; remove do payload qualquer tentativa de spoofing
+    delete dados.empresa_id;
+    delete dados.empresaId;
+    delete dados.cliente_id;
+    delete dados.clienteId;
+    delete dados.tenant_id;
+    delete dados.tenantId;
+    delete dados.mailbox;
+    delete dados.mailboxEmail;
+    delete dados.azureTenantId;
+    delete dados.azureClientId;
+
+    const acao = normalizarTexto(dados.acao).replace(/\s+/g, "_");
+
+    if (!acao) {
+      return res.status(400).json({
+        success: false,
+        error: "Ação não informada",
+        acoesDisponiveis: [
+          "consultar_disponibilidade",
+          "consultar_agendamentos",
+          "agendar",
+          "cancelar",
+          "reagendar"
+        ]
+      });
+    }
+
+    // Log sanitizado (sem expor PII completa, tokens ou API keys)
+    console.log(
+      "AGENDAMENTO API:",
+      JSON.stringify({
+        acao,
+        telefone: mascararTelefone(dados.telefone),
+        cpf: mascararCpf(dados.cpf),
+        data: dados.data || dados.novaData || dados.dataAnterior || null,
+        horario: dados.horario || dados.novoHorario || dados.horarioAnterior || null
+      })
+    );
+
+    let resultado;
+
+    switch (acao) {
+      case "consultar_disponibilidade":
+      case "disponibilidade":
+        resultado = await acaoConsultarDisponibilidade({ tenantContext, dados });
+        break;
+
+      case "consultar_agendamentos":
+      case "listar_agendamentos":
+      case "agendamentos":
+        resultado = await acaoConsultarAgendamentos({ tenantContext, dados });
+        break;
+
+      case "agendar":
+        resultado = await acaoAgendar({ tenantContext, dados });
+        break;
+
+      case "cancelar":
+        resultado = await acaoCancelar({ tenantContext, dados });
+        break;
+
+      case "reagendar":
+      case "remarcar":
+        resultado = await acaoReagendar({ tenantContext, dados });
+        break;
+
+      default:
+        return res.status(400).json({
+          success: false,
+          error: `Ação desconhecida: ${acao}`,
+          acoesDisponiveis: [
+            "consultar_disponibilidade",
+            "consultar_agendamentos",
+            "agendar",
+            "cancelar",
+            "reagendar"
+          ]
         });
     }
-  };
+
+    return res.status(resultado.status).json(resultado.body);
+
+  } catch (error) {
+    console.error("Erro /api/agendamento:", error.message);
+
+    const isGraphError =
+      String(error.message || "").includes("Graph") ||
+      String(error.message || "").includes("calendário") ||
+      String(error.message || "").includes("503") ||
+      String(error.message || "").includes("500");
+
+    const statusCode = isGraphError ? 502 : 500;
+
+    return res.status(statusCode).json({
+      success: false,
+      error: "Ocorreu um erro interno ao processar a solicitação no sistema. Por favor, tente novamente mais tarde."
+    });
+  }
+};
