@@ -83,6 +83,48 @@ function mascararTelefone(telefone) {
   return t ? "***" : "";
 }
 
+function formatarCpfExibicao(cpf) {
+  if (!cpf) return "Não informado";
+  const digitos = String(cpf).replace(/\D/g, "");
+  if (digitos.length === 11) {
+    return digitos.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
+  }
+  const limpo = String(cpf).trim();
+  return limpo || "Não informado";
+}
+
+function formatarTelefoneExibicao(telefone) {
+  if (!telefone) return "Não informado";
+  let digitos = String(telefone).replace(/\D/g, "");
+  if (digitos.startsWith("55") && (digitos.length === 12 || digitos.length === 13)) {
+    digitos = digitos.substring(2);
+  }
+  if (digitos.length === 11) {
+    return digitos.replace(/(\d{2})(\d{5})(\d{4})/, "($1) $2-$3");
+  }
+  if (digitos.length === 10) {
+    return digitos.replace(/(\d{2})(\d{4})(\d{4})/, "($1) $2-$3");
+  }
+  if (digitos.length === 9) {
+    return digitos.replace(/(\d{5})(\d{4})/, "$1-$2");
+  }
+  if (digitos.length === 8) {
+    return digitos.replace(/(\d{4})(\d{4})/, "$1-$2");
+  }
+  const limpo = String(telefone).trim();
+  return limpo || "Não informado";
+}
+
+function formatarDataPtBr(dataStr) {
+  if (!dataStr) return "";
+  const partes = String(dataStr).trim().split("-");
+  if (partes.length === 3) {
+    const [ano, mes, dia] = partes;
+    return `${dia.padStart(2, "0")}/${mes.padStart(2, "0")}/${ano}`;
+  }
+  return String(dataStr).trim();
+}
+
 // ============================================================
 // FORMATAÇÃO DE DATA E HORÁRIO PARA SÍNTESE DE VOZ (TTS GOTO)
 // ============================================================
@@ -651,38 +693,33 @@ async function acaoAgendar({ tenantContext, dados }) {
   const inicio = `${data}T${horario}:00`;
   const fim = disponibilidade.fim.dateTime;
 
-  function formatarCpf(c) {
-    const cLimpo = normalizarTelefone(c);
-    if (cLimpo.length === 11) {
-      return cLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
-    }
-    return c;
-  }
-
-  const cpfFormatado = cpf ? formatarCpf(cpf) : "";
-  const partesData = data.split("-");
-  const dataExibicao = partesData.length === 3 ? `${partesData[2]}/${partesData[1]}/${partesData[0]}` : data;
+  const nomeExibicao = (nome && String(nome).trim()) ? String(nome).trim() : "Cliente";
+  const cpfFormatado = formatarCpfExibicao(cpf);
+  const telefoneFormatado = formatarTelefoneExibicao(telefone);
+  const dataExibicao = formatarDataPtBr(data);
 
   const callReason = dados.callReason || dados.motivo || "";
 
-  const descricao = [
-    "Agendamento criado automaticamente pela integração GoTo.",
-    "",
-    nome ? `Nome: ${nome}` : null,
-    cpfFormatado ? `CPF: ${cpfFormatado}` : null,
-    telefone ? `Telefone: ${telefone}` : null,
-    "",
+  const linhasCorpo = [
+    "Agendamento realizado via GoTo",
+    `Nome: ${nomeExibicao}`,
+    `CPF: ${cpfFormatado}`,
+    `Telefone: ${telefoneFormatado}`,
     `Data: ${dataExibicao}`,
-    `Horário: ${horario}`,
-    "Origem: GoTo IA Recepcionista",
-    conversationSpaceId ? `\nConversationSpaceId: ${conversationSpaceId}` : null,
-    callReason ? `Motivo identificado pela IA: ${callReason}` : null
-  ]
-    .filter(item => item !== null)
-    .join("\n");
+    `Horário: ${horario}`
+  ];
+
+  if (conversationSpaceId) {
+    linhasCorpo.push(`ConversationSpaceId: ${conversationSpaceId}`);
+  }
+  if (callReason) {
+    linhasCorpo.push(`Motivo identificado pela IA: ${callReason}`);
+  }
+
+  const descricao = linhasCorpo.join("\n");
 
   const evento = {
-    subject: `Agendamento GoTo - ${nome}`,
+    subject: `Agendamento GoTo - ${nomeExibicao}`,
     body: {
       contentType: "Text",
       content: descricao
@@ -1235,3 +1272,7 @@ module.exports = async function handler(req, res) {
     });
   }
 };
+
+module.exports.formatarCpfExibicao = formatarCpfExibicao;
+module.exports.formatarTelefoneExibicao = formatarTelefoneExibicao;
+module.exports.formatarDataPtBr = formatarDataPtBr;

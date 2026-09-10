@@ -1,4 +1,4 @@
-﻿const assert = require("assert");
+const assert = require("assert");
 
 // Configurar variáveis de ambiente exigidas
 process.env.GOTO_API_KEY = "test-secret-key";
@@ -787,8 +787,111 @@ async function runTests() {
     console.log(`   -> OK! Status ${res.status} retornado com mensagem de erro limpa.\n`);
   }
 
+  // 18. Montagem do payload do evento Graph (Assunto, Corpo com Nome, CPF, Telefone, Data pt-BR, Horário)
+  {
+    resetMockState();
+    console.log("18. Testando montagem precisa do payload Graph (Assunto e Corpo com Nome, CPF e Telefone formatados)...");
+
+    const res = await invokeHandler({
+      body: {
+        acao: "agendar",
+        nome: "Carlos Eduardo",
+        cpf: "12345678900",
+        telefone: "19986008812",
+        data: "2026-11-25",
+        horario: "15:00"
+      }
+    });
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.success, true);
+    assert.strictEqual(postCalls.length, 1);
+
+    const eventoCriado = postCalls[0];
+
+    // Validação do Assunto
+    assert.strictEqual(eventoCriado.subject, "Agendamento GoTo - Carlos Eduardo");
+    assert.strictEqual(eventoCriado.subject.includes("12345678900"), false); // Não duplicar dados no assunto
+    assert.strictEqual(eventoCriado.subject.includes("19986008812"), false);
+
+    // Validação do Corpo
+    const corpo = eventoCriado.body?.content || "";
+    assert.ok(corpo.includes("Agendamento realizado via GoTo"), "Deve conter cabeçalho padrão");
+    assert.ok(corpo.includes("Nome: Carlos Eduardo"), "Deve conter Nome");
+    assert.ok(corpo.includes("CPF: 123.456.789-00"), "CPF deve estar formatado com 11 dígitos");
+    assert.ok(corpo.includes("Telefone: (19) 98600-8812"), "Telefone brasileiro deve estar formatado (19) 98600-8812");
+    assert.ok(corpo.includes("Data: 25/11/2026"), "Data deve estar formatada em pt-BR");
+    assert.ok(corpo.includes("Horário: 15:00"), "Deve conter Horário");
+
+    // Validação de segurança (sem credenciais ou dados técnicos no corpo)
+    assert.strictEqual(corpo.includes("mock-secret"), false);
+    assert.strictEqual(corpo.includes("mock-tenant"), false);
+    assert.strictEqual(corpo.includes("mock-client"), false);
+    assert.strictEqual(corpo.includes("test-secret-key"), false);
+
+    // Validação de propriedades preservadas
+    assert.strictEqual(eventoCriado.showAs, "busy");
+    assert.strictEqual(eventoCriado.start.dateTime, "2026-11-25T15:00:00");
+    assert.ok(eventoCriado.end.dateTime);
+
+    console.log("   -> OK! Assunto e corpo formatados rigorosamente conforme especificação.\n");
+  }
+
+  // 19. Resiliência: agendamento com CPF e telefone ausentes
+  {
+    resetMockState();
+    console.log("19. Testando agendamento resiliente com CPF e telefone ausentes...");
+
+    const res = await invokeHandler({
+      body: {
+        acao: "agendar",
+        nome: "Ana Beatriz",
+        data: "2026-11-26",
+        horario: "16:00"
+      }
+    });
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.success, true);
+    assert.strictEqual(postCalls.length, 1);
+
+    const eventoCriado = postCalls[0];
+    assert.strictEqual(eventoCriado.subject, "Agendamento GoTo - Ana Beatriz");
+
+    const corpo = eventoCriado.body?.content || "";
+    assert.ok(corpo.includes("Agendamento realizado via GoTo"));
+    assert.ok(corpo.includes("Nome: Ana Beatriz"));
+    assert.ok(corpo.includes("CPF: Não informado"));
+    assert.ok(corpo.includes("Telefone: Não informado"));
+    assert.ok(corpo.includes("Data: 26/11/2026"));
+    assert.ok(corpo.includes("Horário: 16:00"));
+
+    console.log("   -> OK! CPF e telefone ausentes tratados sem quebrar agendamento.\n");
+  }
+
+  // 20. Validação direta dos formatadores
+  {
+    console.log("20. Testando funções auxiliares de formatação diretamente...");
+    assert.strictEqual(handler.formatarCpfExibicao("12345678900"), "123.456.789-00");
+    assert.strictEqual(handler.formatarCpfExibicao("123.456.789-00"), "123.456.789-00");
+    assert.strictEqual(handler.formatarCpfExibicao(""), "Não informado");
+    assert.strictEqual(handler.formatarCpfExibicao(null), "Não informado");
+
+    assert.strictEqual(handler.formatarTelefoneExibicao("19986008812"), "(19) 98600-8812");
+    assert.strictEqual(handler.formatarTelefoneExibicao("+5519986008812"), "(19) 98600-8812");
+    assert.strictEqual(handler.formatarTelefoneExibicao("5519986008812"), "(19) 98600-8812");
+    assert.strictEqual(handler.formatarTelefoneExibicao("1938008812"), "(19) 3800-8812");
+    assert.strictEqual(handler.formatarTelefoneExibicao(""), "Não informado");
+    assert.strictEqual(handler.formatarTelefoneExibicao(null), "Não informado");
+
+    assert.strictEqual(handler.formatarDataPtBr("2026-09-15"), "15/09/2026");
+    assert.strictEqual(handler.formatarDataPtBr("15/09/2026"), "15/09/2026");
+    assert.strictEqual(handler.formatarDataPtBr(""), "");
+    console.log("   -> OK! Todos os formatadores validados unitariamente.\n");
+  }
+
   console.log("=================================================");
-  console.log("TODOS OS 17 TESTES FORAM EXECUTADOS COM SUCESSO!");
+  console.log("TODOS OS 20 TESTES FORAM EXECUTADOS COM SUCESSO!");
   console.log("=================================================");
 }
 
