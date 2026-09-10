@@ -6,13 +6,15 @@ const availabilityEngine = require("../lib/availabilityEngine");
 const graphClient = require("../lib/graphClient");
 const cryptoLib = require("../lib/crypto");
 const handler = require("../api/agendamento");
-const adminLoginHandler = require("../api/admin/login");
-const adminLogoutHandler = require("../api/admin/logout");
-const adminSessionHandler = require("../api/admin/session");
-const adminEmpresasHandler = require("../api/admin/empresas/index");
-const adminPreviaHandler = require("../api/admin/empresas/[id]/previa-disponibilidade");
-const adminTestarM365Handler = require("../api/admin/empresas/[id]/testar-m365");
-const adminChavesGotoHandler = require("../api/admin/empresas/[id]/chaves-goto");
+const adminLoginHandler = require("../lib/admin-routes/login");
+const adminLogoutHandler = require("../lib/admin-routes/logout");
+const adminSessionHandler = require("../lib/admin-routes/session");
+const adminEmpresasHandler = require("../lib/admin-routes/empresas");
+const adminPreviaHandler = require("../lib/admin-routes/previa-disponibilidade");
+const adminTestarM365Handler = require("../lib/admin-routes/testar-m365");
+const adminChavesGotoHandler = require("../lib/admin-routes/chaves-goto");
+const adminDispatcher = require("../api/admin");
+const m365CallbackHandler = require("../api/m365-callback");
 const rateLimiter = require("../lib/rateLimiter");
 
 // Ativa armazenamento em memória para os testes
@@ -181,6 +183,17 @@ function invokeAdmin(handlerFn, req) {
       send(data) {
         this._body = data;
         resolve({ status: this._status, headers: this._headers, body: this._body });
+      },
+      redirect(statusOrUrl, targetUrl) {
+        let code = 302;
+        let loc = statusOrUrl;
+        if (typeof statusOrUrl === "number") {
+          code = statusOrUrl;
+          loc = targetUrl;
+        }
+        this._status = code;
+        this._headers["location"] = loc;
+        resolve({ status: code, headers: this._headers, body: null });
       },
       end() {
         resolve({ status: this._status, headers: this._headers, body: this._body });
@@ -1015,8 +1028,52 @@ async function runMultiempresaTests() {
     console.log("   -> OK! Chave GoTo protegida com checklist de prontidão e irreversível.");
   }
 
+  // 30. Teste do Dispatcher Central api/admin.js e Callback OAuth
+  {
+    console.log("\n--- Cenário 30: Validação do Dispatcher Central api/admin.js e api/m365-callback.js ---");
+    
+    // Teste 30.1: Dispatcher com rota de sessão não autenticada (deve responder 401 via /api/admin/session)
+    const resSessaoAnonima = await invokeAdmin(adminDispatcher, {
+      method: "GET",
+      url: "/api/admin/session",
+      headers: {}
+    });
+    assert.strictEqual(resSessaoAnonima.status, 401, "Dispatcher /api/admin/session deve retornar 401 sem cookie");
+    assert.strictEqual(resSessaoAnonima.body.success, false);
+
+    // Teste 30.2: Dispatcher com rota inexistente (deve responder 404)
+    const resRota404 = await invokeAdmin(adminDispatcher, {
+      method: "GET",
+      url: "/api/admin/rota-inexistente",
+      headers: {}
+    });
+    assert.strictEqual(resRota404.status, 404, "Dispatcher deve retornar 404 para rotas inexistentes");
+
+    // Teste 30.3: Dispatcher com rota de empresas autenticada
+    const resEmpresasDispatcher = await invokeAdmin(adminDispatcher, {
+      method: "GET",
+      url: "/api/admin/empresas",
+      headers: {
+        cookie: cookieAdmin
+      }
+    });
+    assert.strictEqual(resEmpresasDispatcher.status, 200, "Dispatcher deve responder 200 para /api/admin/empresas");
+    assert.ok(Array.isArray(resEmpresasDispatcher.body.empresas));
+
+    // Teste 30.4: Callback M365 sem state (deve redirecionar com erro)
+    const resCallbackSemState = await invokeAdmin(m365CallbackHandler, {
+      method: "GET",
+      url: "/api/admin/m365/callback",
+      headers: {}
+    });
+    assert.strictEqual(resCallbackSemState.status, 302, "Callback sem state deve redirecionar 302");
+    assert.ok(resCallbackSemState.headers.location.includes("m365_erro="));
+
+    console.log("   -> OK! Dispatcher central api/admin.js e api/m365-callback.js validados com sucesso.");
+  }
+
   console.log("\n=========================================================");
-  console.log("TODOS OS 29 CENÁRIOS MULTIEMPRESA E SEGURANÇA PASSARAM!");
+  console.log("TODOS OS 30 CENÁRIOS MULTIEMPRESA E SEGURANÇA PASSARAM!");
   console.log("=========================================================\n");
 }
 

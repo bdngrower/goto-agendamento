@@ -1,6 +1,8 @@
 {
   "rewrites": [
     { "source": "/admin", "destination": "/admin/index.html" },
-    { "source": "/admin/(.*)", "destination": "/admin/index.html" }
+    { "source": "/admin/(.*)", "destination": "/admin/index.html" },
+    { "source": "/api/admin/m365/callback", "destination": "/api/m365-callback" },
+    { "source": "/api/admin/(.*)", "destination": "/api/admin" }
   ]
 }
