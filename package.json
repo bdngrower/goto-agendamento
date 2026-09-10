@@ -6,7 +6,7 @@
     "build": "echo ok",
     "test": "node test/agendamento.test.js",
     "test:multiempresa": "node test/multiempresa.test.js",
-    "test:all": "node test/agendamento.test.js && node test/multiempresa.test.js",
+    "test:all": "node test/agendamento.test.js && node test/multiempresa.test.js && node test/modal_confirmacao.test.js",
     "bootstrap:admin": "node scripts/bootstrap_admin.js"
   },
   "dependencies": {

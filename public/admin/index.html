@@ -788,11 +788,11 @@
   </div>
 
   <!-- Modal Genérico de Confirmação -->
-  <div id="modal-confirmacao" class="modal-overlay hidden">
-    <div class="modal-card" style="max-width: 440px;">
+  <div id="modal-confirmacao" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modal-confirm-titulo">
+    <div class="modal-card" style="max-width: 440px; width: 90%;">
       <h3 id="modal-confirm-titulo" style="margin-bottom: 8px;">Confirmação</h3>
-      <p id="modal-confirm-msg" style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 24px;"></p>
-      <div style="display: flex; justify-content: flex-end; gap: 10px;">
+      <p id="modal-confirm-msg" style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 24px; line-height: 1.4;"></p>
+      <div style="display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap;">
         <button type="button" class="btn btn-outline" id="btn-modal-confirm-nao">Cancelar</button>
         <button type="button" class="btn btn-primary" id="btn-modal-confirm-sim">Confirmar</button>
       </div>
@@ -848,22 +848,69 @@
     function confirmarAcao(titulo, mensagem, botaoTexto = "Confirmar", perigo = false) {
       return new Promise((resolve) => {
         const modal = document.getElementById("modal-confirmacao");
-        document.getElementById("modal-confirm-titulo").innerText = titulo;
-        document.getElementById("modal-confirm-msg").innerText = mensagem;
-        const btnSim = document.getElementById("modal-confirm-sim");
-        btnSim.innerText = botaoTexto;
+        const elTitulo = document.getElementById("modal-confirm-titulo");
+        const elMsg = document.getElementById("modal-confirm-msg");
+        const btnSim = document.getElementById("btn-modal-confirm-sim") || document.getElementById("modal-confirm-sim");
+        const btnNao = document.getElementById("btn-modal-confirm-nao") || document.getElementById("modal-confirm-nao");
+
+        if (!modal || !btnSim || !btnNao) {
+          console.warn("Aviso: Elementos do modal de confirmação ausentes no DOM. Utilizando fallback nativo.");
+          return resolve(window.confirm(mensagem ? `${titulo}\n\n${mensagem}` : (titulo || "Confirmar?")));
+        }
+
+        if (elTitulo) elTitulo.innerText = titulo || "Confirmação";
+        if (elMsg) elMsg.innerText = mensagem || "";
+        btnSim.innerText = botaoTexto || "Confirmar";
         btnSim.className = perigo ? "btn btn-danger" : "btn btn-primary";
 
         modal.classList.remove("hidden");
 
+        let resolved = false;
+
         const cleanup = () => {
           modal.classList.add("hidden");
           btnSim.onclick = null;
-          document.getElementById("btn-modal-confirm-nao").onclick = null;
+          btnNao.onclick = null;
+          modal.onclick = null;
+          window.removeEventListener("keydown", handleKeydown);
         };
 
-        btnSim.onclick = () => { cleanup(); resolve(true); };
-        document.getElementById("btn-modal-confirm-nao").onclick = () => { cleanup(); resolve(false); };
+        const handleKeydown = (e) => {
+          if (e.key === "Escape" && !resolved) {
+            resolved = true;
+            cleanup();
+            resolve(false);
+          }
+        };
+
+        // Fechar ao clicar fora no backdrop (mobile/desktop)
+        modal.onclick = (e) => {
+          if (e.target === modal && !resolved) {
+            resolved = true;
+            cleanup();
+            resolve(false);
+          }
+        };
+
+        window.addEventListener("keydown", handleKeydown);
+
+        btnSim.onclick = (e) => {
+          if (e) e.preventDefault();
+          if (!resolved) {
+            resolved = true;
+            cleanup();
+            resolve(true);
+          }
+        };
+
+        btnNao.onclick = (e) => {
+          if (e) e.preventDefault();
+          if (!resolved) {
+            resolved = true;
+            cleanup();
+            resolve(false);
+          }
+        };
       });
     }
 
@@ -1484,7 +1531,7 @@
     });
 
     // 3. Teste de Gravação (Efêmero com Confirmação e Alerta Crítico)
-    document.getElementById("btn-testar-gravacao").addEventListener("click", async () => {
+    document.getElementById("btn-testar-gravacao")?.addEventListener("click", async () => {
       const confirmado = await confirmarAcao(
         "Confirmação de Teste de Gravação",
         "Este teste criará temporariamente um evento técnico marcado como Livre e o removerá imediatamente. Deseja continuar?",
@@ -1494,45 +1541,73 @@
 
       const alertEl = document.getElementById("m365-alert");
       const btn = document.getElementById("btn-testar-gravacao");
-      alertEl.className = "alert alert-info";
-      alertEl.innerText = "Executando criação e remoção imediata do evento técnico temporário...";
-      alertEl.classList.remove("hidden");
-      btn.disabled = true;
+      if (alertEl) {
+        alertEl.className = "alert alert-info";
+        alertEl.innerHTML = `
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span>⏳</span>
+            <span><strong>Executando teste de gravação efêmera...</strong> Criando evento técnico e removendo imediatamente.</span>
+          </div>
+        `;
+        alertEl.classList.remove("hidden");
+      }
+      if (btn) btn.disabled = true;
 
       try {
         const res = await apiFetch(`/api/admin/empresas/${selectedEmpresaId}/testar-m365?tipo=gravacao`, { method: "POST" });
         const data = await res.json();
-        if (res.ok) {
-          alertEl.className = "alert alert-success";
-          alertEl.innerHTML = `
-            <div>
-              <strong>Gravação Microsoft 365: OK (${data.tempoMs}ms)</strong><br>
-              • Evento técnico criado com sucesso (ID: <code>${data.eventoCriadoId}</code>)<br>
-              • Evento temporário removido imediatamente da agenda (Sucesso).
-            </div>
-          `;
-        } else {
-          // Se criou mas não removeu, alerta crítico!
-          if (data.eventoCriadoId && !data.eventoRemovido) {
-            alertEl.className = "alert alert-danger";
+        
+        // Sucesso estrito: chamada HTTP 200 E data.sucesso E data.eventoRemovido
+        const sucessoTotal = Boolean(res.ok && data.sucesso && data.eventoRemovido);
+
+        if (sucessoTotal) {
+          if (alertEl) {
+            alertEl.className = "alert alert-success";
             alertEl.innerHTML = `
               <div>
-                <strong>ALERTA CRÍTICO: FALHA NA REMOÇÃO DO EVENTO TÉCNICO!</strong><br>
-                O evento de teste foi criado no Microsoft 365 (ID: <code>${data.eventoCriadoId}</code>), porém a chamada de exclusão falhou: ${data.erro}.<br>
-                Remova manualmente este evento técnico temporário da caixa postal.
+                <strong>Gravação Microsoft 365: OK (${data.tempoMs || 0}ms)</strong><br>
+                • <strong>Criação do evento técnico:</strong> Sucesso (ID: <code>${data.eventoCriadoId || "ok"}</code>)<br>
+                • <strong>Remoção imediata:</strong> Sucesso (Evento excluído da agenda com êxito).<br>
+                <em>Nenhum compromisso residual foi mantido no calendário.</em>
               </div>
             `;
+          }
+        } else {
+          // Se criou mas não removeu, alerta crítico de segurança
+          if (data.eventoCriadoId && !data.eventoRemovido) {
+            if (alertEl) {
+              alertEl.className = "alert alert-danger";
+              alertEl.innerHTML = `
+                <div>
+                  <strong>⚠️ ALERTA CRÍTICO: FALHA NA REMOÇÃO DO EVENTO TÉCNICO!</strong><br>
+                  • <strong>Criação do evento:</strong> Criado no Microsoft 365 (ID: <code>${data.eventoCriadoId}</code>)<br>
+                  • <strong>Remoção do evento:</strong> <span style="color: #fca5a5; font-weight: bold;">FALHOU</span> (${data.erro || "Não foi possível remover"}).<br>
+                  <span style="font-weight: bold; text-decoration: underline;">Ação necessária:</span> Remova manualmente este evento técnico temporário da caixa postal da agenda.
+                </div>
+              `;
+            }
           } else {
-            alertEl.className = "alert alert-danger";
-            alertEl.innerText = data.erro || "Falha na criação de evento no calendário.";
+            // Falha na criação
+            if (alertEl) {
+              alertEl.className = "alert alert-danger";
+              alertEl.innerHTML = `
+                <div>
+                  <strong>Falha no teste de gravação:</strong> ${data.erro || "Falha na criação de evento no calendário."}<br>
+                  • <strong>Criação do evento:</strong> Não executada ou rejeitada pelo Microsoft Graph.<br>
+                  • <strong>Remoção do evento:</strong> Não necessária (nenhum evento criado).
+                </div>
+              `;
+            }
           }
         }
         await carregarM365();
       } catch (e) {
-        alertEl.className = "alert alert-danger";
-        alertEl.innerText = "Erro ao executar teste de gravação.";
+        if (alertEl) {
+          alertEl.className = "alert alert-danger";
+          alertEl.innerText = "Erro ao executar teste de gravação: " + e.message;
+        }
       } finally {
-        btn.disabled = false;
+        if (btn) btn.disabled = false;
       }
     });
 
