@@ -8,6 +8,9 @@ const MAILBOX_ID =
 const GRAPH_TIMEZONE =
   "E. South America Standard Time";
 
+const TIMEZONE_SP =
+  "America/Sao_Paulo";
+
 const OFFSET =
   "-03:00";
 
@@ -27,7 +30,55 @@ const HORARIOS_POSSIVEIS = [
 
 
 // ============================================================
-// NORMALIZA TEXTO
+// AUXILIARES DE FUSO E DATA/HORA (AMERICA/SAO_PAULO)
+// ============================================================
+
+function obterDataHoraAtualSP() {
+  const agora = new Date();
+  const formatador = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TIMEZONE_SP,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  });
+  const partes = formatador.formatToParts(agora);
+  const mapa = {};
+  for (const p of partes) {
+    mapa[p.type] = p.value;
+  }
+  const dataHoje = `${mapa.year}-${mapa.month}-${mapa.day}`;
+  const horarioHoje = `${mapa.hour}:${mapa.minute}`;
+  return { dataHoje, horarioHoje };
+}
+
+function validarDataEHorarioFuturo(data, horario) {
+  if (!dataValida(data)) {
+    return { valido: false, erro: "Data inválida. Use o formato AAAA-MM-DD." };
+  }
+  if (!horarioValido(horario)) {
+    return { valido: false, erro: "Horário inválido. Use o formato HH:mm." };
+  }
+
+  const { dataHoje, horarioHoje } = obterDataHoraAtualSP();
+
+  if (data < dataHoje) {
+    return { valido: false, erro: "Não é possível selecionar uma data passada." };
+  }
+
+  if (data === dataHoje && horario <= horarioHoje) {
+    return { valido: false, erro: "Para o dia de hoje, não é possível selecionar um horário que já passou." };
+  }
+
+  return { valido: true };
+}
+
+
+// ============================================================
+// NORMALIZA TEXTO E MASCARAMENTO SEGURO
 // ============================================================
 
 function normalizarTexto(valor) {
@@ -45,6 +96,22 @@ function normalizarTexto(valor) {
 function normalizarTelefone(telefone) {
   return String(telefone || "")
     .replace(/\D/g, "");
+}
+
+function mascararCpf(cpf) {
+  const c = normalizarTelefone(cpf);
+  if (c.length === 11) {
+    return `***.${c.substring(3, 6)}.***-${c.substring(9, 11)}`;
+  }
+  return c ? "***" : "";
+}
+
+function mascararTelefone(telefone) {
+  const t = normalizarTelefone(telefone);
+  if (t.length >= 8) {
+    return `${t.substring(0, 2)}****${t.substring(t.length - 4)}`;
+  }
+  return t ? "***" : "";
 }
 
 
@@ -210,6 +277,39 @@ function formatarDataFalada(dateTime) {
 
   return (
     `${dia} de ${nomesMeses[mes]} de ${ano}`
+  );
+}
+
+function formatarDataCurtaFalada(dateTime) {
+  if (!dateTime) {
+    return "";
+  }
+
+  const data =
+    String(dateTime)
+      .substring(0, 10);
+
+  const [ano, mes, dia] =
+    data.split("-").map(Number);
+
+  const nomesMeses = [
+    "",
+    "janeiro",
+    "fevereiro",
+    "março",
+    "abril",
+    "maio",
+    "junho",
+    "julho",
+    "agosto",
+    "setembro",
+    "outubro",
+    "novembro",
+    "dezembro"
+  ];
+
+  return (
+    `${dia} de ${nomesMeses[mes]}`
   );
 }
 
@@ -512,12 +612,34 @@ async function acaoConsultarDisponibilidade({
 
   if (!dataValida(data)) {
     return {
-      status: 400,
+      status: 200,
 
       body: {
         success: false,
-        error:
-          "Data inválida. Use YYYY-MM-DD."
+        acao: "consultar_disponibilidade",
+        data: data || "",
+        disponivel: false,
+        quantidade: 0,
+        horarios: [],
+        mensagem: "Data inválida. Por favor informe uma data no formato ano, mês e dia."
+      }
+    };
+  }
+
+  const { dataHoje, horarioHoje } = obterDataHoraAtualSP();
+
+  if (data < dataHoje) {
+    return {
+      status: 200,
+
+      body: {
+        success: false,
+        acao: "consultar_disponibilidade",
+        data,
+        disponivel: false,
+        quantidade: 0,
+        horarios: [],
+        mensagem: "Não é possível consultar disponibilidade para uma data que já passou."
       }
     };
   }
@@ -548,6 +670,10 @@ async function acaoConsultarDisponibilidade({
   function horarioEstaLivre(
     horario
   ) {
+    if (data === dataHoje && horario <= horarioHoje) {
+      return false;
+    }
+
     const [hora, minuto] =
       horario
         .split(":")
@@ -737,40 +863,36 @@ async function acaoConsultarAgendamentos({
   dados
 }) {
   const telefone =
-    dados.telefone;
+    normalizarTelefone(dados.telefone);
   const cpf =
-    dados.cpf;
+    normalizarTelefone(dados.cpf);
 
   if (!telefone && !cpf) {
     return {
-      status: 400,
+      status: 200,
 
       body: {
         success: false,
-        error:
-          "CPF ou Telefone não informado"
+        acao: "consultar_agendamentos",
+        mensagem: "CPF ou telefone não informado. Por favor informe seus dados."
       }
     };
   }
 
-  const inicio =
-    new Date()
-      .toISOString();
+  const { dataHoje, horarioHoje } = obterDataHoraAtualSP();
 
-  const limite =
-    new Date();
+  // Início do dia atual em SP para cobrir todos os eventos de hoje
+  const inicio = `${dataHoje}T00:00:00${OFFSET}`;
 
-  limite.setUTCDate(
-    limite.getUTCDate() +
-    365
-  );
+  const limite = new Date();
+  limite.setUTCDate(limite.getUTCDate() + 365);
+  const fim = limite.toISOString();
 
   const eventos =
     await consultarCalendarView({
       accessToken,
       inicio,
-      fim:
-        limite.toISOString()
+      fim
     });
 
   const encontrados =
@@ -780,108 +902,57 @@ async function acaoConsultarAgendamentos({
       telefone
     );
 
-  const agendamentos =
-    encontrados.map(
-      (evento) => {
+  const todosAgendamentos =
+    encontrados
+      .map((evento) => {
         const data =
-          evento
-            ?.start
-            ?.dateTime
-            ?.substring(
-              0,
-              10
-            ) ||
-          "";
-
+          evento?.start?.dateTime?.substring(0, 10) || "";
         const horario =
-          evento
-            ?.start
-            ?.dateTime
-            ?.substring(
-              11,
-              16
-            ) ||
-          "";
+          evento?.start?.dateTime?.substring(11, 16) || "";
 
         return {
-          id:
-            evento.id,
-
-          subject:
-            evento.subject,
-
+          id: evento.id,
+          subject: evento.subject,
           data,
-
           horario,
-
-          dataFalado:
-            formatarDataFalada(
-              evento
-                ?.start
-                ?.dateTime
-            ),
-
-          horarioFalado:
-            falarHorario(
-              horario
-            ),
-
-          inicio:
-            evento
-              ?.start
-              ?.dateTime,
-
-          fim:
-            evento
-              ?.end
-              ?.dateTime
+          dataFalado: formatarDataFalada(evento?.start?.dateTime),
+          dataCurtaFalado: formatarDataCurtaFalada(evento?.start?.dateTime),
+          horarioFalado: falarHorario(horario),
+          inicio: evento?.start?.dateTime,
+          fim: evento?.end?.dateTime
         };
-      }
-    );
+      })
+      .filter((item) => {
+        if (!item.data || !item.horario) return false;
+        if (item.data < dataHoje) return false;
+        if (item.data === dataHoje && item.horario <= horarioHoje) return false;
+        return true;
+      });
+
+  // Ordenar do mais próximo para o mais distante
+  todosAgendamentos.sort((a, b) => {
+    if (a.data !== b.data) return a.data.localeCompare(b.data);
+    return a.horario.localeCompare(b.horario);
+  });
+
+  const agendamentos = todosAgendamentos.slice(0, 4);
 
   let mensagem;
 
-  if (
-    agendamentos.length === 0
-  ) {
-    mensagem =
-      "Não encontrei nenhum agendamento futuro para este telefone.";
-  }
+  if (agendamentos.length === 0) {
+    mensagem = "Não encontrei nenhum agendamento futuro em seu cadastro.";
+  } else if (agendamentos.length === 1) {
+    mensagem = `Encontrei um agendamento para o dia ${agendamentos[0].dataCurtaFalado}, às ${agendamentos[0].horarioFalado}. Para selecionar este agendamento, pressione 1.`;
+  } else {
+    const contagemTexto =
+      agendamentos.length === 2 ? "dois" :
+      agendamentos.length === 3 ? "três" : "quatro";
 
-  else if (
-    agendamentos.length === 1
-  ) {
-    const agendamento =
-      agendamentos[0];
+    const partes = agendamentos.map((ag, index) => {
+      return `Para o dia ${ag.dataCurtaFalado}, às ${ag.horarioFalado}, pressione ${index + 1}.`;
+    });
 
-    mensagem =
-      `Encontrei um agendamento para o dia ${agendamento.dataFalado}, às ${agendamento.horarioFalado}.`;
-  }
-
-  else {
-    const partes =
-      agendamentos
-        .slice(0, 4)
-        .map(
-          (agendamento) =>
-            `dia ${agendamento.dataFalado}, às ${agendamento.horarioFalado}`
-        );
-
-    const ultimo =
-      partes.pop();
-
-    mensagem =
-      `Encontrei ${agendamentos.length} agendamentos. `;
-
-    if (
-      partes.length > 0
-    ) {
-      mensagem +=
-        `${partes.join(", ")} e ${ultimo}.`;
-    } else {
-      mensagem +=
-        `${ultimo}.`;
-    }
+    mensagem = `Encontrei ${contagemTexto} agendamentos. ${partes.join(" ")}`;
   }
 
   return {
@@ -893,7 +964,8 @@ async function acaoConsultarAgendamentos({
       acao:
         "consultar_agendamentos",
 
-      telefone,
+      telefone: dados.telefone || "",
+      cpf: dados.cpf || "",
 
       quantidade:
         agendamentos.length,
@@ -980,10 +1052,6 @@ async function acaoAgendar({
     dados.telefone ||
     "";
 
-  const conversationSpaceId =
-    dados.conversationSpaceId ||
-    "";
-
   const callReason =
     dados.callReason ||
     "";
@@ -993,32 +1061,48 @@ async function acaoAgendar({
   console.log(`DATA: ${data}`);
   console.log(`HORÁRIO: ${horario}`);
   console.log(`NOME: ${nome}`);
-  console.log(`TELEFONE: ${telefone}`);
-  console.log(`CPF RECEBIDO: ${cpf ? "SIM" : "NÃO"}`);
-  console.log("\nConsultando disponibilidade...");
+  console.log(`TELEFONE MASCARADO: ${mascararTelefone(telefone)}`);
+  console.log(`CPF MASCARADO: ${mascararCpf(cpf)}`);
 
-  if (!dataValida(data)) {
+  const validacao = validarDataEHorarioFuturo(data, horario);
+  if (!validacao.valido) {
     return {
-      status: 400,
+      status: 200,
 
       body: {
         success: false,
-        error:
-          "Data inválida. Use YYYY-MM-DD."
+        acao: "agendar",
+        mensagem: validacao.erro
       }
     };
   }
 
-  if (!horarioValido(horario)) {
-    return {
-      status: 400,
-
-      body: {
-        success: false,
-        error:
-          "Horário inválido. Use HH:mm."
+  // Prevenção de duplicidade: se o cliente já tiver agendamento idêntico nessa data e horário
+  if (cpf || telefone) {
+    const consulta = await acaoConsultarAgendamentos({
+      accessToken,
+      dados: {
+        cpf,
+        telefone
       }
-    };
+    });
+
+    const existentes = consulta.body?.agendamentos || [];
+    const duplicado = existentes.find(a => a.data === data && a.horario === horario);
+    if (duplicado) {
+      console.log("Agendamento idêntico já existente para o cliente.");
+      return {
+        status: 200,
+        body: {
+          success: true,
+          acao: "agendar",
+          data,
+          horario,
+          eventoId: duplicado.id,
+          mensagem: `Agendamento já realizado para ${formatarDataFalada(data)} às ${falarHorario(horario)}.`
+        }
+      };
+    }
   }
 
   const disponibilidade =
@@ -1031,18 +1115,13 @@ async function acaoAgendar({
   if (!disponibilidade.livre) {
     console.log("Horário indisponível.");
     return {
-      status: 409,
+      status: 200,
 
       body: {
         success: false,
-
+        acao: "agendar",
         disponivel: false,
-
-        error:
-          "Esse horário não está mais disponível",
-
-        mensagem:
-          "Desculpe, esse horário acabou de ficar indisponível."
+        mensagem: "Desculpe, esse horário não está mais disponível. Por favor, escolha outro horário."
       }
     };
   }
@@ -1136,12 +1215,13 @@ async function acaoAgendar({
   if (!resultado.ok) {
     return {
       status:
-        resultado.status,
+        resultado.status || 502,
 
       body: {
         success: false,
+        acao: "agendar",
         error:
-          "Erro ao criar evento",
+          "Erro ao criar evento no Microsoft Graph",
         details:
           resultado.data
       }
@@ -1214,206 +1294,109 @@ async function acaoCancelar({
   accessToken,
   dados
 }) {
-  let eventoId =
-    dados.eventoId ||
-    dados.evento_id ||
-    "";
+  const telefone = normalizarTelefone(dados.telefone);
+  const cpf = normalizarTelefone(dados.cpf);
 
-  const telefone =
-    dados.telefone ||
-    "";
-    
-  const cpf =
-    dados.cpf ||
-    "";
-    
-  let dataFiltro = dados.data || "";
-  if (dataFiltro) {
-    const dMatch = dataFiltro.match(/(\d{4}-\d{2}-\d{2})/);
-    if (dMatch) dataFiltro = dMatch[1];
-  }
-  
-  let horarioFiltro = dados.horario || "";
-  if (horarioFiltro) {
-    const hMatch = horarioFiltro.match(/(\d{2}:\d{2})/);
-    if (hMatch) horarioFiltro = hMatch[1];
+  let data = dados.data || "";
+  if (data) {
+    const dMatch = data.match(/(\d{4}-\d{2}-\d{2})/);
+    if (dMatch) data = dMatch[1];
   }
 
-  // ----------------------------------------------------------
-  // FALLBACK:
-  // SE NÃO RECEBER EVENTO ID, TENTA LOCALIZAR PELO CPF/TELEFONE.
-  // SÓ CANCELA SE HOUVER UM ÚNICO (ou um único exato com data/hora).
-  // ----------------------------------------------------------
-
-  if (
-    !eventoId &&
-    (telefone || cpf)
-  ) {
-    const consulta =
-      await acaoConsultarAgendamentos({
-        accessToken,
-        dados: {
-          telefone,
-          cpf
-        }
-      });
-
-    let agendamentos =
-      consulta
-        .body
-        ?.agendamentos ||
-      [];
-      
-    // Se a IA passou a data e o horário, filtramos a lista
-    if (dataFiltro && horarioFiltro && agendamentos.length > 0) {
-      agendamentos = agendamentos.filter(a => a.data === dataFiltro && a.horario === horarioFiltro);
-    }
-
-    if (
-      agendamentos.length === 0
-    ) {
-      return {
-        status: 404,
-
-        body: {
-          success: false,
-          encontrado: false,
-
-          error:
-            "Nenhum agendamento futuro encontrado",
-
-          mensagem:
-            "Não encontrei nenhum agendamento futuro para este telefone."
-        }
-      };
-    }
-
-    if (
-      agendamentos.length > 1
-    ) {
-      return {
-        status: 409,
-
-        body: {
-          success: false,
-
-          ambiguo: true,
-
-          quantidade:
-            agendamentos.length,
-
-          agendamentos,
-
-          mensagem:
-            consulta
-              .body
-              .mensagem
-        }
-      };
-    }
-
-    eventoId =
-      agendamentos[0].id;
+  let horario = dados.horario || "";
+  if (horario) {
+    const hMatch = horario.match(/(\d{2}:\d{2})/);
+    if (hMatch) horario = hMatch[1];
   }
 
-  if (!eventoId) {
+  if (!telefone && !cpf) {
     return {
-      status: 400,
-
+      status: 200,
       body: {
         success: false,
-
-        error:
-          "eventoId não informado"
+        acao: "cancelar",
+        mensagem: "CPF ou telefone não informado. Por favor informe seus dados para cancelar."
       }
     };
   }
 
-  const evento =
-    await obterEvento({
-      accessToken,
-      eventoId
-    });
-
-  if (!evento) {
+  if (!dataValida(data) || !horarioValido(horario)) {
     return {
-      status: 404,
-
+      status: 200,
       body: {
         success: false,
-
-        error:
-          "Evento não encontrado"
+        acao: "cancelar",
+        mensagem: "Data ou horário informado inválido para cancelamento."
       }
     };
   }
 
-  const resultado =
-    await graphRequest({
-      accessToken,
+  // Consultar compromissos futuros do cliente
+  const consulta = await acaoConsultarAgendamentos({
+    accessToken,
+    dados: {
+      telefone,
+      cpf
+    }
+  });
 
-      url:
-        `https://graph.microsoft.com/v1.0/users/${MAILBOX_ID}/events/${encodeURIComponent(eventoId)}`,
+  const agendamentos = consulta.body?.agendamentos || [];
 
-      method:
-        "DELETE"
-    });
+  // Localizar correspondentes com data e horário exatos
+  const correspondentes = agendamentos.filter(
+    a => a.data === data && a.horario === horario
+  );
+
+  if (correspondentes.length === 0) {
+    return {
+      status: 200,
+      body: {
+        success: false,
+        acao: "cancelar",
+        mensagem: "Não encontrei nenhum agendamento para a data e horário informados."
+      }
+    };
+  }
+
+  if (correspondentes.length > 1) {
+    return {
+      status: 200,
+      body: {
+        success: false,
+        acao: "cancelar",
+        mensagem: "Encontrei mais de um agendamento no mesmo horário. Por favor, fale com um atendente para cancelar."
+      }
+    };
+  }
+
+  const eventoAlvo = correspondentes[0];
+
+  const resultado = await graphRequest({
+    accessToken,
+    url: `https://graph.microsoft.com/v1.0/users/${MAILBOX_ID}/events/${encodeURIComponent(eventoAlvo.id)}`,
+    method: "DELETE"
+  });
 
   if (!resultado.ok) {
     return {
-      status:
-        resultado.status,
-
+      status: 502,
       body: {
         success: false,
-
-        error:
-          "Erro ao cancelar agendamento",
-
-        details:
-          resultado.data
+        acao: "cancelar",
+        error: "Erro ao cancelar agendamento no Microsoft Graph",
+        details: resultado.data
       }
     };
   }
 
-  const data =
-    evento
-      ?.start
-      ?.dateTime
-      ?.substring(
-        0,
-        10
-      );
-
-  const horario =
-    evento
-      ?.start
-      ?.dateTime
-      ?.substring(
-        11,
-        16
-      );
-
   return {
     status: 200,
-
     body: {
       success: true,
-
-      acao:
-        "cancelar",
-
-      cancelado:
-        true,
-
-      eventoId,
-
+      acao: "cancelar",
       data,
-
       horario,
-
-      mensagem:
-        `Agendamento do dia ${formatarDataFalada(data)}, às ${falarHorario(horario)}, cancelado com sucesso.`
+      mensagem: "Agendamento cancelado com sucesso."
     }
   };
 }
@@ -1427,272 +1410,218 @@ async function acaoReagendar({
   accessToken,
   dados
 }) {
-  let eventoId =
-    dados.eventoId ||
-    dados.evento_id;
+  const telefone = normalizarTelefone(dados.telefone);
+  const cpf = normalizarTelefone(dados.cpf);
 
-  const data =
-    dados.data ||
-    dados.novaData ||
-    dados.nova_data;
-
-  const horario =
-    dados.horario ||
-    dados.novoHorario ||
-    dados.novo_horario;
-
-  const cpf =
-    dados.cpf ||
-    "";
-    
-  const telefone =
-    dados.telefone ||
-    "";
-    
-  let dataFiltro = dados.dataAnterior || dados.data_anterior || "";
-  if (dataFiltro) {
-    const dMatch = dataFiltro.match(/(\d{4}-\d{2}-\d{2})/);
-    if (dMatch) dataFiltro = dMatch[1];
-  }
-  
-  let horarioFiltro = dados.horarioAnterior || dados.horario_anterior || "";
-  if (horarioFiltro) {
-    const hMatch = horarioFiltro.match(/(\d{2}:\d{2})/);
-    if (hMatch) horarioFiltro = hMatch[1];
+  let dataAnterior = dados.dataAnterior || dados.data_anterior || "";
+  if (dataAnterior) {
+    const dMatch = dataAnterior.match(/(\d{4}-\d{2}-\d{2})/);
+    if (dMatch) dataAnterior = dMatch[1];
   }
 
-  if (
-    !eventoId &&
-    (telefone || cpf)
-  ) {
-    const consulta =
-      await acaoConsultarAgendamentos({
-        accessToken,
-        dados: {
-          telefone,
-          cpf
-        }
-      });
+  let horarioAnterior = dados.horarioAnterior || dados.horario_anterior || "";
+  if (horarioAnterior) {
+    const hMatch = horarioAnterior.match(/(\d{2}:\d{2})/);
+    if (hMatch) horarioAnterior = hMatch[1];
+  }
 
-    let agendamentos =
-      consulta
-        .body
-        ?.agendamentos ||
-      [];
-      
-    if (dataFiltro && horarioFiltro && agendamentos.length > 0) {
-      agendamentos = agendamentos.filter(a => a.data === dataFiltro && a.horario === horarioFiltro);
+  let novaData = dados.novaData || dados.nova_data || dados.data || "";
+  if (novaData) {
+    const ndMatch = novaData.match(/(\d{4}-\d{2}-\d{2})/);
+    if (ndMatch) novaData = ndMatch[1];
+  }
+
+  let novoHorario = dados.novoHorario || dados.novo_horario || dados.horario || "";
+  if (novoHorario) {
+    const nhMatch = novoHorario.match(/(\d{2}:\d{2})/);
+    if (nhMatch) novoHorario = nhMatch[1];
+  }
+
+  if (!telefone && !cpf) {
+    return {
+      status: 200,
+      body: {
+        success: false,
+        acao: "reagendar",
+        mensagem: "CPF ou telefone não informado. Por favor informe seus dados."
+      }
+    };
+  }
+
+  if (!dataValida(dataAnterior) || !horarioValido(horarioAnterior)) {
+    return {
+      status: 200,
+      body: {
+        success: false,
+        acao: "reagendar",
+        mensagem: "Data ou horário anterior informado é inválido."
+      }
+    };
+  }
+
+  const validacaoNovo = validarDataEHorarioFuturo(novaData, novoHorario);
+  if (!validacaoNovo.valido) {
+    return {
+      status: 200,
+      body: {
+        success: false,
+        acao: "reagendar",
+        mensagem: validacaoNovo.erro
+      }
+    };
+  }
+
+  // 1. Localizar exatamente o compromisso antigo
+  const consulta = await acaoConsultarAgendamentos({
+    accessToken,
+    dados: {
+      telefone,
+      cpf
     }
-    
-    if (agendamentos.length === 0) {
-       return {
-         status: 404,
-         body: {
-           success: false,
-           error: "Agendamento original não encontrado",
-           mensagem: "Não encontrei o agendamento original que você deseja reagendar."
-         }
-       };
-    }
-    
-    if (agendamentos.length > 1) {
-       return {
-         status: 409,
-         body: {
-           success: false,
-           ambiguo: true,
-           quantidade: agendamentos.length,
-           mensagem: consulta.body.mensagem
-         }
-       };
-    }
-    
-    eventoId = agendamentos[0].id;
-  }
+  });
 
-  if (!eventoId) {
+  const agendamentos = consulta.body?.agendamentos || [];
+
+  // Idempotência: se já estiver reagendado para essa nova data e novo horário
+  const jaReagendado = agendamentos.find(
+    a => a.data === novaData && a.horario === novoHorario
+  );
+  if (jaReagendado) {
     return {
-      status: 400,
-
+      status: 200,
       body: {
-        success: false,
-
-        error:
-          "eventoId não informado e busca por CPF/Telefone falhou"
+        success: true,
+        acao: "reagendar",
+        novaData,
+        novoHorario,
+        mensagem: "Agendamento reagendado com sucesso."
       }
     };
   }
 
-  if (!dataValida(data)) {
-    return {
-      status: 400,
+  const correspondentes = agendamentos.filter(
+    a => a.data === dataAnterior && a.horario === horarioAnterior
+  );
 
+  if (correspondentes.length === 0) {
+    return {
+      status: 200,
       body: {
         success: false,
-
-        error:
-          "Nova data inválida"
+        acao: "reagendar",
+        mensagem: "Não encontrei o agendamento anterior para reagendar."
       }
     };
   }
 
-  if (!horarioValido(horario)) {
+  if (correspondentes.length > 1) {
     return {
-      status: 400,
-
+      status: 200,
       body: {
         success: false,
-
-        error:
-          "Novo horário inválido"
+        acao: "reagendar",
+        mensagem: "Encontrei mais de um agendamento no mesmo horário anterior. Por favor, fale com um atendente."
       }
     };
   }
 
-  const eventoAtual =
-    await obterEvento({
-      accessToken,
-      eventoId
-    });
+  const eventoAlvo = correspondentes[0];
+  const eventoId = eventoAlvo.id;
 
-  if (!eventoAtual) {
-    return {
-      status: 404,
-
-      body: {
-        success: false,
-
-        error:
-          "Evento não encontrado"
-      }
-    };
-  }
-
-  const disponibilidade =
-    await verificarIntervaloLivre({
-      accessToken,
-
-      data,
-
-      horario,
-
-      ignorarEventoId:
-        eventoId
-    });
+  // 2. Validar se a nova data e o novo horário estão disponíveis imediatamente antes da alteração
+  const disponibilidade = await verificarIntervaloLivre({
+    accessToken,
+    data: novaData,
+    horario: novoHorario,
+    ignorarEventoId: eventoId
+  });
 
   if (!disponibilidade.livre) {
     return {
-      status: 409,
-
+      status: 200,
       body: {
         success: false,
-
-        disponivel: false,
-
-        error:
-          "Novo horário indisponível",
-
-        mensagem:
-          "Esse novo horário não está disponível."
+        acao: "reagendar",
+        mensagem: "O novo horário solicitado não está disponível. Por favor, escolha outro horário."
       }
     };
   }
 
-  const inicio =
-    `${data}T${horario}:00`;
+  // 3. Obter evento atual para manter integridade do corpo
+  const eventoAtual = await obterEvento({
+    accessToken,
+    eventoId
+  });
 
-  const fim =
-    disponibilidade
-      .fim
-      .dateTime;
+  if (!eventoAtual) {
+    return {
+      status: 200,
+      body: {
+        success: false,
+        acao: "reagendar",
+        mensagem: "O evento não foi encontrado no calendário para ser reagendado."
+      }
+    };
+  }
 
-  const partesData = data.split("-");
-  const dataExibicao = partesData.length === 3 ? `${partesData[2]}/${partesData[1]}/${partesData[0]}` : data;
+  const inicio = `${novaData}T${novoHorario}:00`;
+  const fim = disponibilidade.fim.dateTime;
+
+  const partesData = novaData.split("-");
+  const dataExibicao = partesData.length === 3 ? `${partesData[2]}/${partesData[1]}/${partesData[0]}` : novaData;
 
   const bodyContentRegex = /Data:\s*[\d/]+\r?\nHorário:\s*\d{2}:\d{2}/i;
-  const novoBodyText = `Data: ${dataExibicao}\nHorário: ${horario}`;
+  const novoBodyText = `Data: ${dataExibicao}\nHorário: ${novoHorario}`;
 
   let novoBodyContent = eventoAtual.body?.content || "";
   if (bodyContentRegex.test(novoBodyContent)) {
     novoBodyContent = novoBodyContent.replace(bodyContentRegex, novoBodyText);
   } else {
-    novoBodyContent += `\n\n[REAGENDADO] Nova Data: ${dataExibicao} - Novo Horário: ${horario}`;
+    novoBodyContent += `\n\n[REAGENDADO] Nova Data: ${dataExibicao} - Novo Horário: ${novoHorario}`;
   }
 
   const patch = {
     start: {
-      dateTime:
-        inicio,
-
-      timeZone:
-        GRAPH_TIMEZONE
+      dateTime: inicio,
+      timeZone: GRAPH_TIMEZONE
     },
-
     end: {
-      dateTime:
-        fim,
-
-      timeZone:
-        GRAPH_TIMEZONE
+      dateTime: fim,
+      timeZone: GRAPH_TIMEZONE
     },
-    
     body: {
       contentType: "Text",
       content: novoBodyContent
     }
   };
 
-  const resultado =
-    await graphRequest({
-      accessToken,
-
-      url:
-        `https://graph.microsoft.com/v1.0/users/${MAILBOX_ID}/events/${encodeURIComponent(eventoId)}`,
-
-      method:
-        "PATCH",
-
-      body:
-        patch
-    });
+  const resultado = await graphRequest({
+    accessToken,
+    url: `https://graph.microsoft.com/v1.0/users/${MAILBOX_ID}/events/${encodeURIComponent(eventoId)}`,
+    method: "PATCH",
+    body: patch
+  });
 
   if (!resultado.ok) {
     return {
-      status:
-        resultado.status,
-
+      status: 502,
       body: {
         success: false,
-
-        error:
-          "Erro ao reagendar",
-
-        details:
-          resultado.data
+        acao: "reagendar",
+        error: "Erro ao reagendar evento no Microsoft Graph",
+        details: resultado.data
       }
     };
   }
 
   return {
     status: 200,
-
     body: {
       success: true,
-
-      acao:
-        "reagendar",
-
-      reagendado:
-        true,
-
-      eventoId,
-
-      data,
-
-      horario,
-
-      mensagem:
-        `Agendamento reagendado para o dia ${formatarDataFalada(data)}, às ${falarHorario(horario)}.`
+      acao: "reagendar",
+      novaData,
+      novoHorario,
+      mensagem: "Agendamento reagendado com sucesso."
     }
   };
 }
@@ -1798,28 +1727,15 @@ module.exports =
           });
       }
 
+      // Registro seguro e mascarado (sem PII aberta nem chaves)
       console.log(
         "AGENDAMENTO API:",
         JSON.stringify({
           acao,
-
-          telefone:
-            dados.telefone ||
-            null,
-
-          data:
-            dados.data ||
-            dados.novaData ||
-            null,
-
-          horario:
-            dados.horario ||
-            dados.novoHorario ||
-            null,
-
-          eventoId:
-            dados.eventoId ||
-            null
+          telefone: mascararTelefone(dados.telefone),
+          cpf: mascararCpf(dados.cpf),
+          data: dados.data || dados.novaData || dados.dataAnterior || null,
+          horario: dados.horario || dados.novoHorario || dados.horarioAnterior || null
         })
       );
 
@@ -1928,11 +1844,14 @@ module.exports =
     } catch (error) {
       console.error(
         "Erro /api/agendamento:",
-        error
+        error.message
       );
 
+      const isGraphError = String(error.message || "").includes("Graph") || String(error.message || "").includes("calendário");
+      const statusCode = isGraphError ? 502 : 500;
+
       return res
-        .status(500)
+        .status(statusCode)
         .json({
           success: false,
 

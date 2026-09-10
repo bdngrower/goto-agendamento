@@ -2,6 +2,9 @@
   "name": "goto-agendamento",
   "version": "1.0.0",
   "private": true,
+  "scripts": {
+    "test": "node test/agendamento.test.js"
+  },
   "dependencies": {
     "@vercel/functions": "^3.9.5"
   }
