@@ -98,6 +98,41 @@ function normalizarTelefone(telefone) {
     .replace(/\D/g, "");
 }
 
+function canonicalizarTelefone(telefone) {
+  let s = normalizarTelefone(telefone);
+  if (s.startsWith("55") && (s.length === 12 || s.length === 13)) {
+    s = s.substring(2);
+  }
+  return s;
+}
+
+function telefoneValido(telefone) {
+  const s = canonicalizarTelefone(telefone);
+  return s.length >= 10 && s.length <= 11;
+}
+
+function cpfValido(cpf) {
+  const c = normalizarTelefone(cpf);
+  return c.length === 11;
+}
+
+function mascararNome(nome) {
+  const n = String(nome || "").trim();
+  if (!n) return "";
+  const partes = n.split(/\s+/);
+  if (partes.length === 1) {
+    const p = partes[0];
+    return p.length > 2 ? `${p.substring(0, 2)}***` : "***";
+  }
+  return `${partes[0]} ${partes[partes.length - 1].substring(0, 1)}***`;
+}
+
+function mascararEventoId(eventoId) {
+  const id = String(eventoId || "").trim();
+  if (id.length <= 8) return id ? "***" : "";
+  return `${id.substring(0, 4)}...${id.substring(id.length - 4)}`;
+}
+
 function mascararCpf(cpf) {
   const c = normalizarTelefone(cpf);
   if (c.length === 11) {
@@ -107,7 +142,7 @@ function mascararCpf(cpf) {
 }
 
 function mascararTelefone(telefone) {
-  const t = normalizarTelefone(telefone);
+  const t = canonicalizarTelefone(telefone);
   if (t.length >= 8) {
     return `${t.substring(0, 2)}****${t.substring(t.length - 4)}`;
   }
@@ -128,13 +163,44 @@ function obterDados(req) {
 
 
 // ============================================================
-// VALIDA DATA
+// VALIDA DATA REAL
 // ============================================================
 
 function dataValida(data) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(
-    String(data || "")
-  );
+  const str = String(data || "").trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str);
+  if (!match) {
+    return false;
+  }
+
+  const ano = Number(match[1]);
+  const mes = Number(match[2]);
+  const dia = Number(match[3]);
+
+  if (mes < 1 || mes > 12 || dia < 1 || dia > 31) {
+    return false;
+  }
+
+  const isBissexto =
+    ano % 4 === 0 && (ano % 100 !== 0 || ano % 400 === 0);
+
+  const diasPorMes = [
+    0,
+    31,
+    isBissexto ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31
+  ];
+
+  return dia <= diasPorMes[mes];
 }
 
 
@@ -510,7 +576,7 @@ async function consultarCalendarView({
   select =
     "id,subject,start,end,isAllDay,bodyPreview,body,webLink"
 }) {
-  const url =
+  let url =
     `https://graph.microsoft.com/v1.0/users/${MAILBOX_ID}` +
     `/calendarView` +
     `?startDateTime=${encodeURIComponent(inicio)}` +
@@ -518,23 +584,34 @@ async function consultarCalendarView({
     `&$top=100` +
     `&$select=${encodeURIComponent(select)}`;
 
-  const resultado =
-    await graphRequest({
-      accessToken,
-      url
-    });
+  const todosEventos = [];
+  let iteracoes = 0;
+  const MAX_ITERACOES = 20; // até 2000 eventos para segurança
 
-  if (!resultado.ok) {
-    throw new Error(
-      `Erro ao consultar calendário ${resultado.status}: ${JSON.stringify(resultado.data)}`
-    );
+  while (url && iteracoes < MAX_ITERACOES) {
+    iteracoes++;
+
+    const resultado =
+      await graphRequest({
+        accessToken,
+        url
+      });
+
+    if (!resultado.ok) {
+      throw new Error(
+        `Erro ao consultar calendário ${resultado.status}: ${JSON.stringify(resultado.data)}`
+      );
+    }
+
+    if (Array.isArray(resultado.data?.value)) {
+      todosEventos.push(...resultado.data.value);
+    }
+
+    // Avança para a próxima página se houver nextLink
+    url = resultado.data?.["@odata.nextLink"] || null;
   }
 
-  return Array.isArray(
-    resultado.data?.value
-  )
-    ? resultado.data.value
-    : [];
+  return todosEventos;
 }
 
 
@@ -795,61 +872,66 @@ async function acaoConsultarDisponibilidade({
 
 
 // ============================================================
-// LOCALIZA EVENTOS PELO CPF OU TELEFONE
+// EXTRAÇÃO E CORRESPONDÊNCIA SEGURA DE CPF E TELEFONE
 // ============================================================
+
+function extrairCpfDoEvento(evento) {
+  const content = String(evento?.body?.content || evento?.bodyPreview || "");
+  const match = content.match(/CPF:\s*([\d\s.-]+)/i);
+  if (match) {
+    const limpo = normalizarTelefone(match[1]);
+    if (limpo.length === 11) {
+      return limpo;
+    }
+  }
+  return null;
+}
+
+function extrairTelefoneDoEvento(evento) {
+  const content = String(evento?.body?.content || evento?.bodyPreview || "");
+  const match = content.match(/Telefone:\s*([^\r\n]+)/i);
+  if (match) {
+    const limpo = canonicalizarTelefone(match[1]);
+    if (limpo.length >= 10 && limpo.length <= 11) {
+      return limpo;
+    }
+  }
+  return null;
+}
 
 function localizarEventosCpfTelefone(
   eventos,
   cpfEsperado,
   telefoneEsperado
 ) {
-  const numTelEsperado = normalizarTelefone(telefoneEsperado);
-  const numCpfEsperado = normalizarTelefone(cpfEsperado); // removes non-digits
+  const cpfNorm = cpfValido(cpfEsperado) ? normalizarTelefone(cpfEsperado) : null;
+  const telNorm = telefoneValido(telefoneEsperado) ? canonicalizarTelefone(telefoneEsperado) : null;
 
-  if (!numTelEsperado && !numCpfEsperado) {
+  // Se nenhum identificador válido for informado, rejeita
+  if (!cpfNorm && !telNorm) {
     return [];
   }
 
   return eventos.filter((evento) => {
-    let matches = false;
-    
-    // Check subject
-    const assuntoStr = String(evento?.subject || "");
-    const subjectDigits = normalizarTelefone(assuntoStr);
-    
-    if (numTelEsperado && subjectDigits.includes(numTelEsperado)) matches = true;
-    if (numCpfEsperado && subjectDigits.includes(numCpfEsperado)) matches = true;
-    
-    // Check body content robustly
-    const bodyContent = String(evento?.body?.content || evento?.bodyPreview || "");
-    
-    // Check for explicit "Telefone: +5511999999999" format
-    if (numTelEsperado) {
-      const phoneMatch = bodyContent.match(/Telefone:\s*([+\d\s.-]+)/i);
-      if (phoneMatch) {
-        const phoneFound = normalizarTelefone(phoneMatch[1]);
-        if (phoneFound.includes(numTelEsperado) || numTelEsperado.includes(phoneFound)) {
-          matches = true;
-        }
-      } else if (normalizarTelefone(bodyContent).includes(numTelEsperado)) {
-         matches = true;
-      }
-    }
-    
-    // Check for explicit "CPF: 123.456.789-00" format
-    if (numCpfEsperado) {
-      const cpfMatch = bodyContent.match(/CPF:\s*([\d\s.-]+)/i);
-      if (cpfMatch) {
-        const cpfFound = normalizarTelefone(cpfMatch[1]);
-        if (cpfFound === numCpfEsperado) {
-          matches = true;
-        }
-      } else if (normalizarTelefone(bodyContent).includes(numCpfEsperado)) {
-         matches = true;
-      }
+    const cpfEvento = extrairCpfDoEvento(evento);
+    const telEvento = extrairTelefoneDoEvento(evento);
+
+    // Se ambos foram informados na busca, ambos devem pertencer obrigatoriamente ao mesmo evento
+    if (cpfNorm && telNorm) {
+      return cpfEvento === cpfNorm && telEvento === telNorm;
     }
 
-    return matches;
+    // Se somente o CPF foi informado
+    if (cpfNorm) {
+      return cpfEvento === cpfNorm;
+    }
+
+    // Se somente o Telefone foi informado
+    if (telNorm) {
+      return telEvento === telNorm;
+    }
+
+    return false;
   });
 }
 
@@ -1052,6 +1134,10 @@ async function acaoAgendar({
     dados.telefone ||
     "";
 
+  const conversationSpaceId =
+    dados.conversationSpaceId ||
+    "";
+
   const callReason =
     dados.callReason ||
     "";
@@ -1060,7 +1146,7 @@ async function acaoAgendar({
   console.log("AÇÃO: agendar");
   console.log(`DATA: ${data}`);
   console.log(`HORÁRIO: ${horario}`);
-  console.log(`NOME: ${nome}`);
+  console.log(`NOME MASCARADO: ${mascararNome(nome)}`);
   console.log(`TELEFONE MASCARADO: ${mascararTelefone(telefone)}`);
   console.log(`CPF MASCARADO: ${mascararCpf(cpf)}`);
 
@@ -1138,7 +1224,7 @@ async function acaoAgendar({
       .dateTime;
 
   function formatarCpf(c) {
-    const cLimpo = c.replace(/\D/g, "");
+    const cLimpo = normalizarTelefone(c);
     if (cLimpo.length === 11) {
       return cLimpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
     }
@@ -1213,26 +1299,24 @@ async function acaoAgendar({
     });
 
   if (!resultado.ok) {
+    console.error("Erro ao criar evento Graph:", JSON.stringify(resultado.data));
     return {
-      status:
-        resultado.status || 502,
+      status: 502,
 
       body: {
         success: false,
         acao: "agendar",
         error:
-          "Erro ao criar evento no Microsoft Graph",
-        details:
-          resultado.data
+          "Erro ao criar agendamento no sistema. Por favor, tente novamente mais tarde."
       }
     };
   }
 
   console.log("Evento criado com sucesso.");
-  console.log(`EVENTO ID: ${resultado.data?.id}`);
+  console.log(`EVENTO ID MASCARADO: ${mascararEventoId(resultado.data?.id)}`);
   console.log(`DATA: ${data}`);
   console.log(`HORÁRIO: ${horario}`);
-  console.log(`NOME: ${nome}`);
+  console.log(`NOME MASCARADO: ${mascararNome(nome)}`);
 
   return {
     status: 200,
@@ -1378,13 +1462,13 @@ async function acaoCancelar({
   });
 
   if (!resultado.ok) {
+    console.error("Erro ao cancelar evento Graph:", JSON.stringify(resultado.data));
     return {
       status: 502,
       body: {
         success: false,
         acao: "cancelar",
-        error: "Erro ao cancelar agendamento no Microsoft Graph",
-        details: resultado.data
+        error: "Erro ao cancelar agendamento no sistema. Por favor, tente novamente mais tarde."
       }
     };
   }
@@ -1603,13 +1687,13 @@ async function acaoReagendar({
   });
 
   if (!resultado.ok) {
+    console.error("Erro ao reagendar evento Graph:", JSON.stringify(resultado.data));
     return {
       status: 502,
       body: {
         success: false,
         acao: "reagendar",
-        error: "Erro ao reagendar evento no Microsoft Graph",
-        details: resultado.data
+        error: "Erro ao reagendar compromisso no sistema. Por favor, tente novamente mais tarde."
       }
     };
   }
@@ -1856,7 +1940,7 @@ module.exports =
           success: false,
 
           error:
-            error.message
+            "Ocorreu um erro interno ao processar a solicitação no sistema. Por favor, tente novamente mais tarde."
         });
     }
   };

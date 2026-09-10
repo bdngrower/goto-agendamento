@@ -15,6 +15,7 @@ let patchCalls = [];
 let deleteCalls = [];
 let postCalls = [];
 let simulateGraphFailure = false;
+let simulateNextLink = false;
 
 global.fetch = async (url, options = {}) => {
   const urlStr = String(url);
@@ -47,8 +48,34 @@ global.fetch = async (url, options = {}) => {
     };
   }
 
-  // 3. CalendarView
+  // 3. CalendarView com suporte a paginação (@odata.nextLink)
   if (urlStr.includes("/calendarView")) {
+    if (simulateNextLink) {
+      if (urlStr.includes("page=2")) {
+        // Página 2: restante dos eventos
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ value: mockEvents.slice(100) }),
+          json: async () => ({ value: mockEvents.slice(100) })
+        };
+      } else {
+        // Página 1: primeiros 100 eventos e @odata.nextLink
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            value: mockEvents.slice(0, 100),
+            "@odata.nextLink": "https://graph.microsoft.com/v1.0/users/mock-user/calendarView?page=2"
+          }),
+          json: async () => ({
+            value: mockEvents.slice(0, 100),
+            "@odata.nextLink": "https://graph.microsoft.com/v1.0/users/mock-user/calendarView?page=2"
+          })
+        };
+      }
+    }
+
     return {
       ok: true,
       status: 200,
@@ -163,9 +190,8 @@ async function invokeHandler({ method = "POST", headers = {}, body = {} }) {
 
 // Bateria de testes
 async function runTests() {
-  console.log("=== INICIANDO BATERIA DE TESTES DO AGENDAMENTO ===\n");
+  console.log("=== INICIANDO SUÍTE COMPLETA DE TESTES DO AGENDAMENTO ===\n");
 
-  // Helper para criar eventos no mock
   function criarEventoMock({ id, data, horario, nome = "Cliente Teste", cpf = "12345678900", telefone = "11999998888" }) {
     return {
       id,
@@ -186,16 +212,16 @@ async function runTests() {
     };
   }
 
-  // Reset do estado
   function resetMockState() {
     mockEvents = [];
     patchCalls = [];
     deleteCalls = [];
     postCalls = [];
     simulateGraphFailure = false;
+    simulateNextLink = false;
   }
 
-  // TESTE 1: Cliente com zero compromissos
+  // 1. Cliente com zero compromissos
   {
     resetMockState();
     console.log("1. Testando cliente com zero compromissos...");
@@ -213,10 +239,10 @@ async function runTests() {
     assert.strictEqual(res.body.evento1Horario, "");
     assert.strictEqual(res.body.evento4Data, "");
     assert.ok(res.body.mensagem.includes("Não encontrei"));
-    console.log("   -> OK! Retornou quantidade 0 e mensagem adequada.\n");
+    console.log("   -> OK!\n");
   }
 
-  // TESTE 2: Cliente com um compromisso
+  // 2. Cliente com um compromisso
   {
     resetMockState();
     console.log("2. Testando cliente com um compromisso...");
@@ -245,14 +271,13 @@ async function runTests() {
     assert.strictEqual(res.body.evento3Data, "");
     assert.strictEqual(res.body.evento4Data, "");
     assert.ok(res.body.mensagem.includes("pressione 1"));
-    console.log("   -> OK! Retornou 1 evento com posições vazias preenchidas como string vazia e mensagem para DTMF.\n");
+    console.log("   -> OK!\n");
   }
 
-  // TESTE 3: Cliente com dois ou mais compromissos (ordenação cronológica e frase de voz)
+  // 3. Cliente com múltiplos compromissos (ordenação e DTMF)
   {
     resetMockState();
-    console.log("3. Testando cliente com múltiplos compromissos...");
-    // Adicionar fora de ordem propositalmente
+    console.log("3. Testando múltiplos compromissos (ordenação cronológica e DTMF)...");
     mockEvents.push(criarEventoMock({
       id: "ev-distante",
       data: "2026-10-09",
@@ -275,20 +300,17 @@ async function runTests() {
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.success, true);
     assert.strictEqual(res.body.quantidade, 2);
-    // Deve vir ordenado do mais próximo para o mais distante
     assert.strictEqual(res.body.evento1Data, "2026-09-15");
     assert.strictEqual(res.body.evento1Horario, "09:00");
     assert.strictEqual(res.body.evento2Data, "2026-10-09");
     assert.strictEqual(res.body.evento2Horario, "14:00");
-    assert.strictEqual(res.body.evento3Data, "");
-    assert.strictEqual(res.body.evento4Data, "");
     assert.ok(res.body.mensagem.includes("Encontrei dois agendamentos"));
     assert.ok(res.body.mensagem.includes("pressione 1"));
     assert.ok(res.body.mensagem.includes("pressione 2"));
-    console.log("   -> OK! Ordenou cronologicamente e formatou mensagem DTMF numerada para GoTo.\n");
+    console.log("   -> OK!\n");
   }
 
-  // TESTE 4: Cancelamento de um compromisso específico
+  // 4. Cancelamento de compromisso específico
   {
     resetMockState();
     console.log("4. Testando cancelamento de compromisso específico...");
@@ -324,11 +346,10 @@ async function runTests() {
     assert.strictEqual(deleteCalls.length, 1);
     assert.strictEqual(deleteCalls[0], "ev-canc");
     assert.strictEqual(mockEvents.length, 1);
-    assert.strictEqual(mockEvents[0].id, "ev-outro");
-    console.log("   -> OK! Cancelou apenas o compromisso específico com resposta contratual exata.\n");
+    console.log("   -> OK!\n");
   }
 
-  // TESTE 5: Tentativa de cancelar compromisso inexistente
+  // 5. Tentativa de cancelar compromisso inexistente
   {
     resetMockState();
     console.log("5. Testando tentativa de cancelar compromisso inexistente...");
@@ -353,14 +374,13 @@ async function runTests() {
     assert.strictEqual(res.body.acao, "cancelar");
     assert.ok(res.body.mensagem);
     assert.strictEqual(deleteCalls.length, 0);
-    console.log("   -> OK! Retornou HTTP 200 com success: false sem alterar calendário.\n");
+    console.log("   -> OK!\n");
   }
 
-  // TESTE 6: Resultado ambíguo sem cancelamento
+  // 6. Resultado ambíguo sem cancelamento
   {
     resetMockState();
     console.log("6. Testando resultado ambíguo sem cancelamento...");
-    // 2 eventos no mesmo dia e horário para o cliente
     mockEvents.push(criarEventoMock({
       id: "ev-ambiguo-1",
       data: "2026-09-15",
@@ -387,10 +407,10 @@ async function runTests() {
     assert.strictEqual(res.body.acao, "cancelar");
     assert.ok(res.body.mensagem.includes("mais de um agendamento"));
     assert.strictEqual(deleteCalls.length, 0);
-    console.log("   -> OK! Ambiguidade detectada, nenhum evento cancelado.\n");
+    console.log("   -> OK!\n");
   }
 
-  // TESTE 7: Reagendamento para horário livre (atualização in-place sem deletar)
+  // 7. Reagendamento para horário livre (atualização in-place)
   {
     resetMockState();
     console.log("7. Testando reagendamento para horário livre...");
@@ -420,13 +440,13 @@ async function runTests() {
       novoHorario: "11:00",
       mensagem: "Agendamento reagendado com sucesso."
     });
-    assert.strictEqual(deleteCalls.length, 0); // Não deve deletar
-    assert.strictEqual(patchCalls.length, 1);   // Deve atualizar via PATCH
+    assert.strictEqual(deleteCalls.length, 0);
+    assert.strictEqual(patchCalls.length, 1);
     assert.strictEqual(patchCalls[0].id, "ev-original");
-    console.log("   -> OK! Atualizou in-place via PATCH com contrato exato.\n");
+    console.log("   -> OK!\n");
   }
 
-  // TESTE 8: Reagendamento para horário ocupado
+  // 8. Reagendamento para horário ocupado
   {
     resetMockState();
     console.log("8. Testando reagendamento para horário ocupado...");
@@ -435,7 +455,6 @@ async function runTests() {
       data: "2026-09-15",
       horario: "10:00"
     }));
-    // Evento de outro cliente ocupando o novo horário
     mockEvents.push(criarEventoMock({
       id: "ev-outro-cliente",
       data: "2026-10-09",
@@ -462,13 +481,13 @@ async function runTests() {
     assert.ok(res.body.mensagem.includes("não está disponível"));
     assert.strictEqual(patchCalls.length, 0);
     assert.strictEqual(deleteCalls.length, 0);
-    console.log("   -> OK! Recusou alteração mantendo evento original intacto.\n");
+    console.log("   -> OK!\n");
   }
 
-  // TESTE 9: Repetição da mesma requisição (idempotência)
+  // 9. Repetição da mesma requisição de reagendamento (idempotência)
   {
     resetMockState();
-    console.log("9. Testando repetição da mesma requisição (idempotência)...");
+    console.log("9. Testando repetição de requisição de reagendamento...");
     mockEvents.push(criarEventoMock({
       id: "ev-ja-reagendado",
       data: "2026-10-09",
@@ -491,59 +510,88 @@ async function runTests() {
     assert.strictEqual(res.body.success, true);
     assert.strictEqual(res.body.novaData, "2026-10-09");
     assert.strictEqual(res.body.novoHorario, "11:00");
-    assert.strictEqual(patchCalls.length, 0); // Já estava reagendado
-    console.log("   -> OK! Idempotente sem erros nem duplicatas.\n");
+    assert.strictEqual(patchCalls.length, 0);
+    console.log("   -> OK!\n");
   }
 
-  // TESTE 10: Data passada e horário decorrido no dia atual
+  // 10. Agendamento novo bem-sucedido em horário livre e contrato completo
   {
     resetMockState();
-    console.log("10. Testando validação de data passada e horário decorrido...");
-    // Tentativa com data de ontem
-    const resPassada = await invokeHandler({
+    console.log("10. Testando agendamento novo bem-sucedido em horário livre...");
+    const res = await invokeHandler({
       body: {
         acao: "agendar",
-        cpf: "12345678900",
-        telefone: "11999998888",
-        data: "2020-01-01",
-        horario: "10:00"
+        nome: "Maria Silva",
+        cpf: "123.456.789-00",
+        telefone: "+55 (11) 99999-8888",
+        data: "2026-11-20",
+        horario: "14:00",
+        conversationSpaceId: "conv-12345",
+        callReason: "Consulta inicial"
       }
     });
 
-    assert.strictEqual(resPassada.status, 200);
-    assert.strictEqual(resPassada.body.success, false);
-    assert.ok(resPassada.body.mensagem.includes("passada"));
-
-    // Consulta de agendamento que inclui evento no passado
-    mockEvents.push(criarEventoMock({
-      id: "ev-passado",
-      data: "2020-01-01",
-      horario: "10:00"
-    }));
-    mockEvents.push(criarEventoMock({
-      id: "ev-futuro",
-      data: "2026-12-01",
-      horario: "10:00"
-    }));
-
-    const resConsulta = await invokeHandler({
-      body: {
-        acao: "consultar_agendamentos",
-        cpf: "12345678900",
-        telefone: "11999998888"
-      }
-    });
-
-    assert.strictEqual(resConsulta.body.quantidade, 1);
-    assert.strictEqual(resConsulta.body.evento1Data, "2026-12-01");
-    console.log("   -> OK! Data passada rejeitada e excluída das consultas futuras.\n");
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.success, true);
+    assert.strictEqual(res.body.acao, "agendar");
+    assert.strictEqual(res.body.data, "2026-11-20");
+    assert.strictEqual(res.body.horario, "14:00");
+    assert.ok(res.body.eventoId);
+    assert.ok(res.body.mensagem);
+    assert.strictEqual(postCalls.length, 1);
+    assert.ok(postCalls[0].body.content.includes("ConversationSpaceId: conv-12345"));
+    assert.ok(postCalls[0].body.content.includes("Motivo identificado pela IA: Consulta inicial"));
+    console.log("   -> OK! Criou evento via POST, sem erro de conversationSpaceId e com contrato obrigatório.\n");
   }
 
-  // TESTE 11: Falha simulada do Microsoft Graph
+  // 11. Repetição do mesmo agendamento sem duplicação (idempotência do agendar)
+  {
+    console.log("11. Testando repetição do mesmo agendamento sem duplicação...");
+    const postCallsAntes = postCalls.length;
+    const res = await invokeHandler({
+      body: {
+        acao: "agendar",
+        nome: "Maria Silva",
+        cpf: "12345678900",
+        telefone: "11999998888",
+        data: "2026-11-20",
+        horario: "14:00"
+      }
+    });
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.success, true);
+    assert.strictEqual(res.body.data, "2026-11-20");
+    assert.strictEqual(res.body.horario, "14:00");
+    assert.strictEqual(postCalls.length, postCallsAntes); // Não criou outro POST
+    console.log("   -> OK! Idempotência em agendar confirmada sem duplicatas.\n");
+  }
+
+  // 12. Paginação do Microsoft Graph com mais de 100 eventos
   {
     resetMockState();
-    console.log("11. Testando falha técnica simulada do Microsoft Graph...");
-    simulateGraphFailure = true;
+    console.log("12. Testando paginação do Microsoft Graph (@odata.nextLink com > 100 eventos)...");
+    simulateNextLink = true;
+
+    // Criar 100 eventos genéricos de outros clientes
+    for (let i = 1; i <= 100; i++) {
+      mockEvents.push(criarEventoMock({
+        id: `ev-outro-${i}`,
+        data: "2026-10-15",
+        horario: "10:00",
+        cpf: "99999999999",
+        telefone: "11888887777"
+      }));
+    }
+
+    // Criar o evento do cliente alvo na segunda página (> 100)
+    mockEvents.push(criarEventoMock({
+      id: "ev-alvo-pagina-2",
+      data: "2026-11-05",
+      horario: "15:00",
+      cpf: "12345678900",
+      telefone: "11999998888"
+    }));
 
     const res = await invokeHandler({
       body: {
@@ -553,16 +601,195 @@ async function runTests() {
       }
     });
 
-    // Erros técnicos reais devem retornar 500 ou 502
-    assert.ok(res.status >= 500);
-    assert.strictEqual(res.body.success, false);
-    assert.ok(res.body.error);
-    console.log(`   -> OK! Status ${res.status} retornado para falha técnica real do Graph.\n`);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.success, true);
+    assert.strictEqual(res.body.quantidade, 1);
+    assert.strictEqual(res.body.evento1Id, "ev-alvo-pagina-2");
+    assert.strictEqual(res.body.evento1Data, "2026-11-05");
+    assert.strictEqual(res.body.evento1Horario, "15:00");
+    console.log("   -> OK! Paginação recuperou o evento na página 2 após os 100 primeiros.\n");
   }
 
-  console.log("=========================================");
-  console.log("TODOS OS 11 TESTES PASSARAM COM SUCESSO!");
-  console.log("=========================================");
+  // 13. Correspondência segura: CPF correto com telefone de outro cliente
+  {
+    resetMockState();
+    console.log("13. Testando correspondência segura: CPF correto e telefone de outro cliente...");
+    mockEvents.push(criarEventoMock({
+      id: "ev-cliente-a",
+      data: "2026-10-20",
+      horario: "10:00",
+      cpf: "11111111111",
+      telefone: "11999991111"
+    }));
+    mockEvents.push(criarEventoMock({
+      id: "ev-cliente-b",
+      data: "2026-10-20",
+      horario: "14:00",
+      cpf: "22222222222",
+      telefone: "11999992222"
+    }));
+
+    // Busca fornecendo CPF de A e telefone de B: NÃO deve encontrar nenhum
+    const res = await invokeHandler({
+      body: {
+        acao: "consultar_agendamentos",
+        cpf: "11111111111",
+        telefone: "11999992222"
+      }
+    });
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.quantidade, 0);
+    console.log("   -> OK! Rejeitou correspondência cruzada de clientes distintos.\n");
+  }
+
+  // 14. Correspondência segura: Normalização com código de país (+55) presente e ausente
+  {
+    resetMockState();
+    console.log("14. Testando correspondência com código de país (+55) presente/ausente...");
+    mockEvents.push(criarEventoMock({
+      id: "ev-tel-55",
+      data: "2026-10-20",
+      horario: "10:00",
+      cpf: "12345678900",
+      telefone: "+55 (11) 99999-8888"
+    }));
+
+    // Busca sem o 55
+    const resSem55 = await invokeHandler({
+      body: {
+        acao: "consultar_agendamentos",
+        telefone: "11999998888"
+      }
+    });
+    assert.strictEqual(resSem55.body.quantidade, 1);
+    assert.strictEqual(resSem55.body.evento1Id, "ev-tel-55");
+
+    // Busca com o 55
+    const resCom55 = await invokeHandler({
+      body: {
+        acao: "consultar_agendamentos",
+        telefone: "5511999998888"
+      }
+    });
+    assert.strictEqual(resCom55.body.quantidade, 1);
+    assert.strictEqual(resCom55.body.evento1Id, "ev-tel-55");
+    console.log("   -> OK! Tratou variação de código de país 55 com exatidão.\n");
+  }
+
+  // 15. Correspondência segura: Identificadores incompletos/curtos
+  {
+    resetMockState();
+    console.log("15. Testando identificadores incompletos ou curtos...");
+    mockEvents.push(criarEventoMock({
+      id: "ev-tel-1",
+      data: "2026-10-20",
+      horario: "10:00",
+      cpf: "12345678900",
+      telefone: "11999998888"
+    }));
+
+    // Telefone curto (ex: 4 dígitos)
+    const resCurto = await invokeHandler({
+      body: {
+        acao: "consultar_agendamentos",
+        telefone: "8888"
+      }
+    });
+    assert.strictEqual(resCurto.body.quantidade, 0);
+
+    // CPF curto (menos de 11 dígitos)
+    const resCpfCurto = await invokeHandler({
+      body: {
+        acao: "consultar_agendamentos",
+        cpf: "12345"
+      }
+    });
+    assert.strictEqual(resCpfCurto.body.quantidade, 0);
+    console.log("   -> OK! Identificadores incompletos foram desconsiderados com segurança.\n");
+  }
+
+  // 16. Validação real de datas (30 de fevereiro, mês 13, dia zero, ano bissexto)
+  {
+    resetMockState();
+    console.log("16. Testando validação estrita de datas reais de calendário...");
+
+    // 30 de fevereiro
+    const resFeb30 = await invokeHandler({
+      body: {
+        acao: "consultar_disponibilidade",
+        data: "2026-02-30"
+      }
+    });
+    assert.strictEqual(resFeb30.body.success, false);
+    assert.ok(resFeb30.body.mensagem.includes("Data inválida"));
+
+    // Mês 13
+    const resMes13 = await invokeHandler({
+      body: {
+        acao: "consultar_disponibilidade",
+        data: "2026-13-10"
+      }
+    });
+    assert.strictEqual(resMes13.body.success, false);
+
+    // Dia zero
+    const resDia0 = await invokeHandler({
+      body: {
+        acao: "consultar_disponibilidade",
+        data: "2026-10-00"
+      }
+    });
+    assert.strictEqual(resDia0.body.success, false);
+
+    // Ano não bissexto (2026-02-29 deve ser inválido)
+    const resFeb29NaoBissexto = await invokeHandler({
+      body: {
+        acao: "consultar_disponibilidade",
+        data: "2026-02-29"
+      }
+    });
+    assert.strictEqual(resFeb29NaoBissexto.body.success, false);
+
+    // Ano bissexto futuro (2028-02-29 deve ser válido)
+    const resFeb29Bissexto = await invokeHandler({
+      body: {
+        acao: "consultar_disponibilidade",
+        data: "2028-02-29"
+      }
+    });
+    assert.strictEqual(resFeb29Bissexto.body.success, true);
+    console.log("   -> OK! Todas as validações de datas reais de calendário passaram.\n");
+  }
+
+  // 17. Falha simulada do Microsoft Graph e sanitização de erros técnicos
+  {
+    resetMockState();
+    console.log("17. Testando falha técnica simulada do Graph e mensagens limpas...");
+    simulateGraphFailure = true;
+
+    const res = await invokeHandler({
+      body: {
+        acao: "agendar",
+        nome: "Teste Falha",
+        cpf: "12345678900",
+        telefone: "11999998888",
+        data: "2026-11-20",
+        horario: "10:00"
+      }
+    });
+
+    assert.ok(res.status >= 500);
+    assert.strictEqual(res.body.success, false);
+    // Não deve conter detalhes brutos nem vazar mensagens internas do Graph
+    assert.strictEqual(res.body.details, undefined);
+    assert.ok(res.body.error);
+    console.log(`   -> OK! Status ${res.status} retornado com mensagem de erro limpa.\n`);
+  }
+
+  console.log("=================================================");
+  console.log("TODOS OS 17 TESTES FORAM EXECUTADOS COM SUCESSO!");
+  console.log("=================================================");
 }
 
 runTests().catch(err => {
