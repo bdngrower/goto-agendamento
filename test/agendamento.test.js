@@ -890,8 +890,441 @@ async function runTests() {
     console.log("   -> OK! Todos os formatadores validados unitariamente.\n");
   }
 
+  // 21. Consultar disponibilidade com dia e mês válidos (dia=15, mes=10)
+  {
+    resetMockState();
+    console.log("21. Testando consultar disponibilidade com dia e mês válidos (15/10)...");
+    const res = await invokeHandler({
+      body: {
+        acao: "consultar_disponibilidade",
+        dia: 15,
+        mes: 10
+      }
+    });
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.body.success, true);
+    assert.strictEqual(res.body.acao, "consultar_disponibilidade");
+    assert.strictEqual(res.body.data, "2026-10-15");
+    assert.strictEqual(res.body.disponivel, true);
+    assert.ok(res.body.quantidade > 0);
+    assert.ok(res.body.horario1);
+    assert.ok(res.body.mensagem.includes("horários disponíveis") || res.body.mensagem.includes("horário disponível"));
+    console.log("   -> OK! Retornou data resolvida 2026-10-15 e disponibilidade com sucesso.\n");
+  }
+
+  // 22. Consultar disponibilidade com dia/mês com 1 dígito
+  {
+    resetMockState();
+    console.log("22. Testando dia e mês com 1 dígito...");
+
+    // 1 de outubro (1 dígito dia, 2 dígitos mês)
+    const resDia1 = await invokeHandler({
+      body: {
+        acao: "consultar_disponibilidade",
+        dia: 1,
+        mes: 10
+      }
+    });
+    assert.strictEqual(resDia1.status, 200);
+    assert.strictEqual(resDia1.body.success, true);
+    assert.strictEqual(resDia1.body.data, "2026-10-01");
+    assert.strictEqual(resDia1.body.disponivel, true);
+
+    // 5 de setembro (1 dígito dia e 1 dígito mês, mas passado relativo a 10/09/2026)
+    const resPassado1Digito = await invokeHandler({
+      body: {
+        acao: "consultar_disponibilidade",
+        dia: "5",
+        mes: "9"
+      }
+    });
+    assert.strictEqual(resPassado1Digito.status, 200);
+    assert.strictEqual(resPassado1Digito.body.success, false);
+    assert.strictEqual(resPassado1Digito.body.disponivel, false);
+    assert.ok(resPassado1Digito.body.mensagem.includes("já passou"));
+    console.log("   -> OK! Normalização e validação de 1 dígito funcionando perfeitamente.\n");
+  }
+
+  // 23. Consultar disponibilidade em Fevereiro
+  {
+    resetMockState();
+    console.log("23. Testando regras para o mês de Fevereiro...");
+
+    // 29 de fevereiro em 2026 (não bissexto -> inválido)
+    const resFeb29 = await invokeHandler({
+      body: {
+        acao: "consultar_disponibilidade",
+        dia: 29,
+        mes: 2
+      }
+    });
+    assert.strictEqual(resFeb29.status, 200);
+    assert.strictEqual(resFeb29.body.success, false);
+    assert.strictEqual(resFeb29.body.disponivel, false);
+    assert.ok(resFeb29.body.mensagem.includes("não existe"));
+
+    // 30 de fevereiro (sempre inválido)
+    const resFeb30 = await invokeHandler({
+      body: {
+        acao: "consultar_disponibilidade",
+        dia: 30,
+        mes: 2
+      }
+    });
+    assert.strictEqual(resFeb30.body.success, false);
+    assert.ok(resFeb30.body.mensagem.includes("não existe"));
+
+    // 28 de fevereiro de 2026 (data passada no ano atual)
+    const resFeb28 = await invokeHandler({
+      body: {
+        acao: "consultar_disponibilidade",
+        dia: 28,
+        mes: 2
+      }
+    });
+    assert.strictEqual(resFeb28.body.success, false);
+    assert.ok(resFeb28.body.mensagem.includes("já passou"));
+    console.log("   -> OK! Regras de Fevereiro validadas com sucesso.\n");
+  }
+
+  // 24. Consultar disponibilidade para datas inexistentes
+  {
+    resetMockState();
+    console.log("24. Testando datas inexistentes (mês com 30 dias, mês 13, dia 0)...");
+
+    // 31 de abril (abril tem 30 dias)
+    const resAbril31 = await invokeHandler({
+      body: {
+        acao: "consultar_disponibilidade",
+        dia: 31,
+        mes: 4
+      }
+    });
+    assert.strictEqual(resAbril31.body.success, false);
+    assert.ok(resAbril31.body.mensagem.includes("não existe"));
+
+    // Mês 13
+    const resMes13 = await invokeHandler({
+      body: {
+        acao: "consultar_disponibilidade",
+        dia: 15,
+        mes: 13
+      }
+    });
+    assert.strictEqual(resMes13.body.success, false);
+    assert.ok(resMes13.body.mensagem.includes("entre 1 e 12"));
+
+    // Dia 0
+    const resDia0 = await invokeHandler({
+      body: {
+        acao: "consultar_disponibilidade",
+        dia: 0,
+        mes: 10
+      }
+    });
+    assert.strictEqual(resDia0.body.success, false);
+    assert.ok(resDia0.body.mensagem.includes("não existe"));
+    console.log("   -> OK! Datas inexistentes rejeitadas com mensagens amigáveis.\n");
+  }
+
+  // 25. Rejeitar data anterior a hoje
+  {
+    resetMockState();
+    console.log("25. Testando rejeição de data anterior a hoje...");
+
+    const resOntem = await invokeHandler({
+      body: {
+        acao: "consultar_disponibilidade",
+        dia: 9,
+        mes: 9
+      }
+    });
+    assert.strictEqual(resOntem.body.success, false);
+    assert.strictEqual(resOntem.body.disponivel, false);
+    assert.ok(resOntem.body.mensagem.includes("já passou"));
+    console.log("   -> OK! Data anterior a hoje rejeitada.\n");
+  }
+
+  // 26. Data além do horizonte máximo
+  {
+    resetMockState();
+    console.log("26. Testando data além do horizonte máximo (ex: > 60 dias)...");
+
+    // 25 de dezembro de 2026 (> 100 dias após 10/09/2026)
+    const resNatal = await invokeHandler({
+      body: {
+        acao: "consultar_disponibilidade",
+        dia: 25,
+        mes: 12
+      }
+    });
+    assert.strictEqual(resNatal.status, 200);
+    assert.strictEqual(resNatal.body.success, true);
+    assert.strictEqual(resNatal.body.disponivel, false);
+    assert.strictEqual(resNatal.body.data, "2026-12-25");
+    assert.ok(resNatal.body.mensagem.includes("ultrapassa o limite máximo"));
+    console.log("   -> OK! Data fora do horizonte tratada amigavelmente.\n");
+  }
+
+  // 27. Política de sábado e domingo (fechado)
+  {
+    resetMockState();
+    console.log("27. Testando dias de final de semana (sábado/domingo sem atendimento)...");
+
+    // 17 de outubro de 2026 é Sábado
+    const resSabado = await invokeHandler({
+      body: {
+        acao: "consultar_disponibilidade",
+        dia: 17,
+        mes: 10
+      }
+    });
+    assert.strictEqual(resSabado.status, 200);
+    assert.strictEqual(resSabado.body.success, true);
+    assert.strictEqual(resSabado.body.disponivel, false);
+    assert.strictEqual(resSabado.body.quantidade, 0);
+
+    // 18 de outubro de 2026 é Domingo
+    const resDomingo = await invokeHandler({
+      body: {
+        acao: "consultar_disponibilidade",
+        dia: 18,
+        mes: 10
+      }
+    });
+    assert.strictEqual(resDomingo.status, 200);
+    assert.strictEqual(resDomingo.body.success, true);
+    assert.strictEqual(resDomingo.body.disponivel, false);
+    assert.strictEqual(resDomingo.body.quantidade, 0);
+    console.log("   -> OK! Final de semana sem atendimento respeitado.\n");
+  }
+
+  // 28. Disponibilidade ocupada no Microsoft Graph
+  {
+    resetMockState();
+    console.log("28. Testando disponibilidade quando todos os horários estão ocupados no Graph...");
+
+    // Ocupa todos os horários de 15/10/2026 (09h às 17h)
+    const horarios = ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00"];
+    for (const h of horarios) {
+      const [hora] = h.split(":").map(Number);
+      mockEvents.push({
+        id: `ev-lotado-${h}`,
+        subject: "Compromisso Existente",
+        start: { dateTime: `2026-10-15T${h}:00`, timeZone: "E. South America Standard Time" },
+        end: { dateTime: `2026-10-15T${String(hora + 1).padStart(2, "0")}:00:00`, timeZone: "E. South America Standard Time" },
+        isAllDay: false
+      });
+    }
+
+    const resLotado = await invokeHandler({
+      body: {
+        acao: "consultar_disponibilidade",
+        dia: 15,
+        mes: 10
+      }
+    });
+
+    assert.strictEqual(resLotado.status, 200);
+    assert.strictEqual(resLotado.body.success, true);
+    assert.strictEqual(resLotado.body.disponivel, false);
+    assert.strictEqual(resLotado.body.quantidade, 0);
+    assert.strictEqual(resLotado.body.horarios.length, 0);
+    assert.ok(resLotado.body.mensagem.includes("Não há horários disponíveis"));
+    console.log("   -> OK! Bloqueio de agenda Microsoft 365 refletido com exatidão.\n");
+  }
+
+  // 29. Novo agendamento sem nome (nome opcional)
+  {
+    resetMockState();
+    console.log("29. Testando agendamento sem nome informado...");
+
+    const resSemNome = await invokeHandler({
+      body: {
+        acao: "agendar",
+        cpf: "12345678900",
+        telefone: "11999998888",
+        data: "2026-10-15",
+        horario: "10:00"
+      }
+    });
+
+    assert.strictEqual(resSemNome.status, 200);
+    assert.strictEqual(resSemNome.body.success, true);
+    assert.strictEqual(postCalls.length, 1);
+
+    const evento = postCalls[0];
+    assert.strictEqual(evento.subject, "Agendamento GoTo");
+    assert.ok(evento.body.content.includes("Nome: Não informado"));
+    assert.ok(evento.body.content.includes("CPF: 123.456.789-00"));
+    assert.ok(evento.body.content.includes("Telefone: (11) 99999-8888"));
+    console.log("   -> OK! Assunto seguro 'Agendamento GoTo' e Nome: Não informado aplicados sem inventar nome.\n");
+  }
+
+  // 30. Reagendamento para nova data válida com novo_dia, novo_mes e novo_horario
+  {
+    resetMockState();
+    console.log("30. Testando reagendamento com novo_dia, novo_mes e novo_horario...");
+
+    mockEvents.push(criarEventoMock({
+      id: "ev-reagendar-alvo",
+      data: "2026-10-15",
+      horario: "10:00",
+      cpf: "12345678900",
+      telefone: "11999998888"
+    }));
+
+    const resReag = await invokeHandler({
+      body: {
+        acao: "reagendar",
+        cpf_cliente: "123.456.789-00",
+        telefone_cliente: "11999998888",
+        data_agendamento_atual: "2026-10-15",
+        horario_agendamento_atual: "10:00",
+        novo_dia: 20,
+        novo_mes: 10,
+        novo_horario: "14:00"
+      }
+    });
+
+    assert.strictEqual(resReag.status, 200);
+    assert.strictEqual(resReag.body.success, true);
+    assert.strictEqual(resReag.body.acao, "reagendar");
+    assert.strictEqual(resReag.body.novaData, "2026-10-20");
+    assert.strictEqual(resReag.body.novoHorario, "14:00");
+    assert.strictEqual(patchCalls.length, 1);
+    assert.strictEqual(patchCalls[0].id, "ev-reagendar-alvo");
+    assert.strictEqual(patchCalls[0].body.start.dateTime, "2026-10-20T14:00:00");
+    console.log("   -> OK! Reagendamento com novo_dia e novo_mes executado com sucesso no Graph.\n");
+  }
+
+  // 31. Reagendamento com data inválida e passada
+  {
+    resetMockState();
+    console.log("31. Testando reagendamento rejeitando data inválida ou passada...");
+
+    mockEvents.push(criarEventoMock({
+      id: "ev-base",
+      data: "2026-10-15",
+      horario: "10:00",
+      cpf: "12345678900",
+      telefone: "11999998888"
+    }));
+
+    // Data inexistente (31/02)
+    const resInvalido = await invokeHandler({
+      body: {
+        acao: "reagendar",
+        cpf_cliente: "12345678900",
+        telefone_cliente: "11999998888",
+        data_agendamento_atual: "2026-10-15",
+        horario_agendamento_atual: "10:00",
+        novo_dia: 31,
+        novo_mes: 2,
+        novo_horario: "14:00"
+      }
+    });
+    assert.strictEqual(resInvalido.body.success, false);
+    assert.ok(resInvalido.body.mensagem.includes("não existe"));
+
+    // Data passada (01/09)
+    const resPassado = await invokeHandler({
+      body: {
+        acao: "reagendar",
+        cpf_cliente: "12345678900",
+        telefone_cliente: "11999998888",
+        data_agendamento_atual: "2026-10-15",
+        horario_agendamento_atual: "10:00",
+        novo_dia: 1,
+        novo_mes: 9,
+        novo_horario: "14:00"
+      }
+    });
+    assert.strictEqual(resPassado.body.success, false);
+    assert.ok(resPassado.body.mensagem.includes("já passou"));
+    console.log("   -> OK! Reagendamento para datas inválidas/passadas rejeitado.\n");
+  }
+
+  // 32. Preservação dos contratos de consultar_agendamentos e cancelar com novos aliases
+  {
+    resetMockState();
+    console.log("32. Testando preservação dos contratos de consultar e cancelar com aliases...");
+
+    mockEvents.push(criarEventoMock({
+      id: "ev-contrato",
+      data: "2026-10-15",
+      horario: "10:00",
+      cpf: "12345678900",
+      telefone: "11999998888"
+    }));
+
+    // Consultar agendamentos com cpf_cliente e telefone_cliente
+    const resConsulta = await invokeHandler({
+      body: {
+        acao: "consultar_agendamentos",
+        cpf_cliente: "123.456.789-00",
+        telefone_cliente: "(11) 99999-8888"
+      }
+    });
+
+    assert.strictEqual(resConsulta.status, 200);
+    assert.strictEqual(resConsulta.body.success, true);
+    assert.strictEqual(resConsulta.body.quantidade, 1);
+    assert.strictEqual(resConsulta.body.evento1Data, "2026-10-15");
+    assert.strictEqual(resConsulta.body.evento1Horario, "10:00");
+    assert.strictEqual(resConsulta.body.evento2Data, "");
+    assert.strictEqual(resConsulta.body.evento2Horario, "");
+    assert.strictEqual(resConsulta.body.evento3Data, "");
+    assert.strictEqual(resConsulta.body.evento3Horario, "");
+    assert.strictEqual(resConsulta.body.evento4Data, "");
+    assert.strictEqual(resConsulta.body.evento4Horario, "");
+    assert.ok(resConsulta.body.mensagem);
+
+    // Cancelar com cpf_cliente, telefone_cliente, data_agendamento_atual, horario_agendamento_atual
+    const resCancelar = await invokeHandler({
+      body: {
+        acao: "cancelar",
+        cpf_cliente: "123.456.789-00",
+        telefone_cliente: "(11) 99999-8888",
+        data_agendamento_atual: "2026-10-15",
+        horario_agendamento_atual: "10:00"
+      }
+    });
+
+    assert.strictEqual(resCancelar.status, 200);
+    assert.strictEqual(resCancelar.body.success, true);
+    assert.strictEqual(resCancelar.body.data, "2026-10-15");
+    assert.strictEqual(resCancelar.body.horario, "10:00");
+    assert.strictEqual(deleteCalls.length, 1);
+    assert.strictEqual(deleteCalls[0], "ev-contrato");
+    console.log("   -> OK! Contratos de consulta e cancelamento 100% preservados e funcionais com aliases.\n");
+  }
+
+  // 33. Teste unitário da função resolverDataEntrada com fuso IANA
+  {
+    console.log("33. Testando resolverDataEntrada isoladamente com fuso IANA da empresa...");
+    const resSP = handler.resolverDataEntrada({
+      dados: { dia: "15", mes: "10" },
+      fusoHorario: "America/Sao_Paulo"
+    });
+    assert.strictEqual(resSP.valido, true);
+    assert.strictEqual(resSP.data, "2026-10-15");
+
+    // Rejeição sem avançar para o próximo ano quando o mês/dia já passou no ano atual
+    const resPassadaSP = handler.resolverDataEntrada({
+      dados: { dia: 1, mes: 1 },
+      fusoHorario: "America/Sao_Paulo"
+    });
+    assert.strictEqual(resPassadaSP.valido, false);
+    assert.strictEqual(resPassadaSP.motivo, "DATA_PASSADA");
+    assert.strictEqual(resPassadaSP.data, "2026-01-01");
+
+    console.log("   -> OK! resolverDataEntrada unitariamente validado com fuso IANA.\n");
+  }
+
   console.log("=================================================");
-  console.log("TODOS OS 20 TESTES FORAM EXECUTADOS COM SUCESSO!");
+  console.log("TODOS OS 33 TESTES FORAM EXECUTADOS COM SUCESSO!");
   console.log("=================================================");
 }
 

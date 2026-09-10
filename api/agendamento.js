@@ -340,42 +340,162 @@ async function verificarIntervaloLivre({
 }
 
 // ============================================================
+// RESOLUÇÃO DE DATA (DIA/MÊS OU COMPLETA) NO ANO ATUAL DO FUSO
+// ============================================================
+
+function resolverDataEntrada({ dados, fusoHorario = DEFAULT_TIMEZONE, politica = {} }) {
+  const diaRaw = dados.dia !== undefined ? dados.dia : (dados.novo_dia !== undefined ? dados.novo_dia : dados.novoDia);
+  const mesRaw = dados.mes !== undefined ? dados.mes : (dados.novo_mes !== undefined ? dados.novo_mes : (dados.novoMes !== undefined ? dados.novoMes : (dados.mês !== undefined ? dados.mês : dados.novo_mês)));
+  const dataRaw = dados.data || dados.nova_data || dados.novaData || dados.data_agendamento_atual;
+
+  const { dataHoje } = availabilityEngine.obterDataHoraAtualNoFuso(fusoHorario);
+  const anoAtual = Number(dataHoje.split("-")[0]);
+  const limiteMaximoDias = politica.limite_maximo_dias || politica.limiteMaximoDias || 60;
+
+  // Cenário 1: dia e mês foram informados
+  if (diaRaw !== undefined && mesRaw !== undefined && String(diaRaw).trim() !== "" && String(mesRaw).trim() !== "") {
+    const diaStr = String(diaRaw).trim();
+    const mesStr = String(mesRaw).trim();
+
+    if (!/^\d{1,2}$/.test(diaStr) || !/^\d{1,2}$/.test(mesStr)) {
+      return {
+        valido: false,
+        motivo: "FORMATO_INVALIDO",
+        mensagem: "Data inválida. Por favor, verifique o dia e o mês informados.",
+        data: ""
+      };
+    }
+
+    const diaNum = Number(diaStr);
+    const mesNum = Number(mesStr);
+
+    if (mesNum < 1 || mesNum > 12) {
+      return {
+        valido: false,
+        motivo: "MES_INVALIDO",
+        mensagem: "Data inválida. O mês deve ser um número entre 1 e 12.",
+        data: ""
+      };
+    }
+
+    const diasPorMes = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    const bissexto = (anoAtual % 4 === 0 && anoAtual % 100 !== 0) || (anoAtual % 400 === 0);
+    if (bissexto) diasPorMes[1] = 29;
+
+    if (diaNum < 1 || diaNum > diasPorMes[mesNum - 1]) {
+      return {
+        valido: false,
+        motivo: "DIA_INVALIDO",
+        mensagem: "Data inválida. O dia informado não existe no mês selecionado.",
+        data: ""
+      };
+    }
+
+    const dataFormatada = `${anoAtual}-${String(mesNum).padStart(2, "0")}-${String(diaNum).padStart(2, "0")}`;
+
+    // Regra: Não avançar automaticamente para o próximo ano; rejeitar datas anteriores ao dia atual
+    if (dataFormatada < dataHoje) {
+      return {
+        valido: false,
+        motivo: "DATA_PASSADA",
+        mensagem: "Não é possível consultar disponibilidade para uma data que já passou.",
+        data: dataFormatada
+      };
+    }
+
+    return {
+      valido: true,
+      data: dataFormatada
+    };
+  }
+
+  // Cenário 2: data completa informada (ex: YYYY-MM-DD ou DDMMAAAA)
+  if (dataRaw) {
+    const dataNormalizada = availabilityEngine.normalizarDataEntrada(dataRaw);
+    if (!dataNormalizada) {
+      return {
+        valido: false,
+        motivo: "DATA_INVALIDA",
+        mensagem: "Data inválida. Por favor informe uma data no formato ano, mês e dia.",
+        data: String(dataRaw).trim()
+      };
+    }
+
+    if (dataNormalizada < dataHoje) {
+      return {
+        valido: false,
+        motivo: "DATA_PASSADA",
+        mensagem: "Não é possível consultar disponibilidade para uma data que já passou.",
+        data: dataNormalizada
+      };
+    }
+
+    return {
+      valido: true,
+      data: dataNormalizada
+    };
+  }
+
+  return {
+    valido: false,
+    motivo: "DADOS_AUSENTES",
+    mensagem: "Por favor informe o dia e o mês desejados.",
+    data: ""
+  };
+}
+
+// ============================================================
 // AÇÃO 1: CONSULTAR DISPONIBILIDADE
 // ============================================================
 
 async function acaoConsultarDisponibilidade({ tenantContext, dados }) {
-  const dataBruta = dados.data;
-  const data = availabilityEngine.normalizarDataEntrada(dataBruta);
+  const fuso = tenantContext.fusoHorario || DEFAULT_TIMEZONE;
+  const resolucaoData = resolverDataEntrada({
+    dados,
+    fusoHorario: fuso,
+    politica: tenantContext.politica || {}
+  });
 
-  if (!data) {
+  if (!resolucaoData.valido) {
     return {
       status: 200,
       body: {
         success: false,
         acao: "consultar_disponibilidade",
-        data: dataBruta || "",
+        data: resolucaoData.data || "",
         disponivel: false,
         quantidade: 0,
         horarios: [],
-        mensagem: "Data inválida. Por favor informe uma data no formato ano, mês e dia."
+        horario1: "",
+        horario2: "",
+        horario3: "",
+        horario4: "",
+        mensagem: resolucaoData.mensagem
       }
     };
   }
 
-  const fuso = tenantContext.fusoHorario || DEFAULT_TIMEZONE;
+  const data = resolucaoData.data;
   const { dataHoje, horarioHoje } = availabilityEngine.obterDataHoraAtualNoFuso(fuso);
 
-  if (data < dataHoje) {
+  // Validação de horizonte máximo (respeitar política da empresa)
+  const limiteMaximoDias = tenantContext.politica?.limite_maximo_dias || tenantContext.politica?.limiteMaximoDias || 60;
+  const diasFuturos = availabilityEngine.diferencaEmDias(dataHoje, data);
+  if (diasFuturos > limiteMaximoDias) {
     return {
       status: 200,
       body: {
-        success: false,
+        success: true,
         acao: "consultar_disponibilidade",
         data,
         disponivel: false,
         quantidade: 0,
         horarios: [],
-        mensagem: "Não é possível consultar disponibilidade para uma data que já passou."
+        horario1: "",
+        horario2: "",
+        horario3: "",
+        horario4: "",
+        mensagem: "A data informada ultrapassa o limite máximo permitido para agendamento. Por favor, escolha uma data mais próxima."
       }
     };
   }
@@ -393,6 +513,12 @@ async function acaoConsultarDisponibilidade({ tenantContext, dados }) {
     });
 
     if (!resSlots.valido || resSlots.fechado || resSlots.slots.length === 0) {
+      let msg = "Não há horários disponíveis para a data informada. Por favor, escolha outra data.";
+      if (resSlots.motivo === "LIMITE_MAXIMO_DIAS") {
+        msg = "A data informada ultrapassa o limite máximo permitido para agendamento. Por favor, escolha uma data mais próxima.";
+      } else if (resSlots.fechado) {
+        msg = "Não há atendimento na data informada. Por favor, escolha outra data.";
+      }
       return {
         status: 200,
         body: {
@@ -406,7 +532,7 @@ async function acaoConsultarDisponibilidade({ tenantContext, dados }) {
           horario2: "",
           horario3: "",
           horario4: "",
-          mensagem: "Não há horários disponíveis para a data informada. Por favor, escolha outra data."
+          mensagem: msg
         }
       };
     }
@@ -490,8 +616,8 @@ async function acaoConsultarAgendamentos({ tenantContext, dados }) {
   const fuso = tenantContext.fusoHorario || DEFAULT_TIMEZONE;
   const { dataHoje, horarioHoje } = availabilityEngine.obterDataHoraAtualNoFuso(fuso);
 
-  const telefone = normalizarTelefone(dados.telefone);
-  const cpf = normalizarTelefone(dados.cpf);
+  const telefone = normalizarTelefone(dados.telefone || dados.telefone_cliente);
+  const cpf = normalizarTelefone(dados.cpf || dados.cpf_cliente);
 
   if (!telefone && !cpf) {
     return {
@@ -602,10 +728,33 @@ async function acaoConsultarAgendamentos({ tenantContext, dados }) {
 // ============================================================
 
 async function acaoAgendar({ tenantContext, dados }) {
-  const dataBruta = dados.data;
-  const data = availabilityEngine.normalizarDataEntrada(dataBruta) || dataBruta;
-  const horario = dados.horario;
   const fuso = tenantContext.fusoHorario || DEFAULT_TIMEZONE;
+
+  // Aceita data (YYYY-MM-DD) ou dia e mes
+  let data;
+  if (dados.data) {
+    const dataNormalizada = availabilityEngine.normalizarDataEntrada(dados.data);
+    data = dataNormalizada || dados.data;
+  } else if (dados.dia !== undefined && dados.mes !== undefined) {
+    const resolucao = resolverDataEntrada({ dados, fusoHorario: fuso, politica: tenantContext.politica || {} });
+    if (!resolucao.valido) {
+      return {
+        status: 200,
+        body: {
+          success: false,
+          acao: "agendar",
+          data: resolucao.data || "",
+          horario: dados.horario || "",
+          mensagem: resolucao.mensagem
+        }
+      };
+    }
+    data = resolucao.data;
+  } else {
+    data = "";
+  }
+
+  const horario = dados.horario;
 
   const validacao = validarDataEHorarioFuturoNoFuso(data, horario, fuso);
   if (!validacao.valido) {
@@ -621,16 +770,21 @@ async function acaoAgendar({ tenantContext, dados }) {
     };
   }
 
-  const nome = dados.nome || "Cliente";
-  const telefone = dados.telefone || "";
-  const cpf = dados.cpf || "";
+  const nomeRaw = dados.nome || dados.name || dados.cliente || "";
+  const nomeLimpo = String(nomeRaw).trim();
+  const temNome = nomeLimpo.length > 0;
+  const nomeExibicao = temNome ? nomeLimpo : "Não informado";
+  const assunto = temNome ? `Agendamento GoTo - ${nomeLimpo}` : "Agendamento GoTo";
+
+  const telefone = normalizarTelefone(dados.telefone || dados.telefone_cliente);
+  const cpf = normalizarTelefone(dados.cpf || dados.cpf_cliente);
   const conversationSpaceId = dados.conversationSpaceId || "";
 
   console.log("===== API AGENDAMENTO =====");
   console.log("AÇÃO: agendar");
   console.log(`DATA: ${data}`);
   console.log(`HORÁRIO: ${horario}`);
-  console.log(`NOME MASCARADO: ${mascararNome(nome)}`);
+  console.log(`NOME MASCARADO: ${mascararNome(nomeLimpo)}`);
   console.log(`TELEFONE MASCARADO: ${mascararTelefone(telefone)}`);
   console.log(`CPF MASCARADO: ${mascararCpf(cpf)}`);
 
@@ -693,7 +847,6 @@ async function acaoAgendar({ tenantContext, dados }) {
   const inicio = `${data}T${horario}:00`;
   const fim = disponibilidade.fim.dateTime;
 
-  const nomeExibicao = (nome && String(nome).trim()) ? String(nome).trim() : "Cliente";
   const cpfFormatado = formatarCpfExibicao(cpf);
   const telefoneFormatado = formatarTelefoneExibicao(telefone);
   const dataExibicao = formatarDataPtBr(data);
@@ -719,7 +872,7 @@ async function acaoAgendar({ tenantContext, dados }) {
   const descricao = linhasCorpo.join("\n");
 
   const evento = {
-    subject: `Agendamento GoTo - ${nomeExibicao}`,
+    subject: assunto,
     body: {
       contentType: "Text",
       content: descricao
@@ -746,7 +899,7 @@ async function acaoAgendar({ tenantContext, dados }) {
   console.log(`EVENTO ID MASCARADO: ${mascararEventoId(eventoCriado?.id)}`);
   console.log(`DATA: ${data}`);
   console.log(`HORÁRIO: ${horario}`);
-  console.log(`NOME MASCARADO: ${mascararNome(nome)}`);
+  console.log(`NOME MASCARADO: ${mascararNome(nomeLimpo)}`);
 
   return {
     status: 200,
@@ -767,15 +920,15 @@ async function acaoAgendar({ tenantContext, dados }) {
 // ============================================================
 
 async function acaoCancelar({ tenantContext, dados }) {
-  const telefone = normalizarTelefone(dados.telefone);
-  const cpf = normalizarTelefone(dados.cpf);
+  const telefone = normalizarTelefone(dados.telefone || dados.telefone_cliente);
+  const cpf = normalizarTelefone(dados.cpf || dados.cpf_cliente);
 
-  const dataBruta = dados.data || "";
+  const dataBruta = dados.data_agendamento_atual || dados.data || "";
   const data = availabilityEngine.normalizarDataEntrada(dataBruta) || dataBruta;
 
-  let horario = dados.horario || "";
+  let horario = dados.horario_agendamento_atual || dados.horario || "";
   if (horario) {
-    const hMatch = horario.match(/(\d{2}:\d{2})/);
+    const hMatch = String(horario).match(/(\d{2}:\d{2})/);
     if (hMatch) horario = hMatch[1];
   }
 
@@ -864,25 +1017,16 @@ async function acaoCancelar({ tenantContext, dados }) {
 // ============================================================
 
 async function acaoReagendar({ tenantContext, dados }) {
-  const telefone = normalizarTelefone(dados.telefone);
-  const cpf = normalizarTelefone(dados.cpf);
+  const telefone = normalizarTelefone(dados.telefone || dados.telefone_cliente);
+  const cpf = normalizarTelefone(dados.cpf || dados.cpf_cliente);
 
-  let dataAnterior = dados.dataAnterior || dados.data_anterior || "";
+  let dataAnterior = dados.data_agendamento_atual || dados.dataAnterior || dados.data_anterior || dados.data || "";
   dataAnterior = availabilityEngine.normalizarDataEntrada(dataAnterior) || dataAnterior;
 
-  let horarioAnterior = dados.horarioAnterior || dados.horario_anterior || "";
+  let horarioAnterior = dados.horario_agendamento_atual || dados.horarioAnterior || dados.horario_anterior || dados.horario || "";
   if (horarioAnterior) {
-    const hMatch = horarioAnterior.match(/(\d{2}:\d{2})/);
+    const hMatch = String(horarioAnterior).match(/(\d{2}:\d{2})/);
     if (hMatch) horarioAnterior = hMatch[1];
-  }
-
-  let novaData = dados.novaData || dados.nova_data || dados.data || "";
-  novaData = availabilityEngine.normalizarDataEntrada(novaData) || novaData;
-
-  let novoHorario = dados.novoHorario || dados.novo_horario || dados.horario || "";
-  if (novoHorario) {
-    const nhMatch = novoHorario.match(/(\d{2}:\d{2})/);
-    if (nhMatch) novoHorario = nhMatch[1];
   }
 
   if (!telefone && !cpf) {
@@ -908,16 +1052,96 @@ async function acaoReagendar({ tenantContext, dados }) {
   }
 
   const fuso = tenantContext.fusoHorario || DEFAULT_TIMEZONE;
-  const validacaoNovo = validarDataEHorarioFuturoNoFuso(novaData, novoHorario, fuso);
-  if (!validacaoNovo.valido) {
+
+  // Resolução da nova data (aceita novo_dia e novo_mes, ou novaData / nova_data)
+  const novaDataInformada = dados.nova_data || dados.novaData || (dados.data && dados.data !== dataAnterior ? dados.data : undefined);
+
+  const resolucaoNovaData = resolverDataEntrada({
+    dados: {
+      dia: dados.novo_dia !== undefined ? dados.novo_dia : (dados.novoDia !== undefined ? dados.novoDia : (dados.nova_data ? undefined : dados.dia)),
+      mes: dados.novo_mes !== undefined ? dados.novo_mes : (dados.novoMes !== undefined ? dados.novoMes : (dados.novo_mês !== undefined ? dados.novo_mês : (dados.nova_data ? undefined : dados.mes))),
+      data: novaDataInformada
+    },
+    fusoHorario: fuso,
+    politica: tenantContext.politica || {}
+  });
+
+  if (!resolucaoNovaData.valido) {
     return {
       status: 200,
       body: {
         success: false,
         acao: "reagendar",
-        mensagem: validacaoNovo.erro
+        mensagem: resolucaoNovaData.mensagem
       }
     };
+  }
+
+  const novaData = resolucaoNovaData.data;
+
+  let novoHorario = dados.novo_horario || dados.novoHorario || dados.horario || "";
+  if (novoHorario) {
+    const nhMatch = String(novoHorario).match(/(\d{2}:\d{2})/);
+    if (nhMatch) novoHorario = nhMatch[1];
+  }
+
+  if (!availabilityEngine.horarioValido(novoHorario)) {
+    return {
+      status: 200,
+      body: {
+        success: false,
+        acao: "reagendar",
+        mensagem: "Novo horário informado é inválido. Use o formato HH:mm."
+      }
+    };
+  }
+
+  const { dataHoje, horarioHoje } = availabilityEngine.obterDataHoraAtualNoFuso(fuso);
+  if (novaData === dataHoje && novoHorario <= horarioHoje) {
+    return {
+      status: 200,
+      body: {
+        success: false,
+        acao: "reagendar",
+        mensagem: "Para o dia de hoje, não é possível selecionar um horário que já passou."
+      }
+    };
+  }
+
+  // Validação de limite máximo de dias no reagendamento
+  const limiteMaximoDias = tenantContext.politica?.limite_maximo_dias || tenantContext.politica?.limiteMaximoDias || 60;
+  const diasFuturos = availabilityEngine.diferencaEmDias(dataHoje, novaData);
+  if (diasFuturos > limiteMaximoDias) {
+    return {
+      status: 200,
+      body: {
+        success: false,
+        acao: "reagendar",
+        mensagem: "A data informada ultrapassa o limite máximo permitido para agendamento."
+      }
+    };
+  }
+
+  // Verifica horário semanal e exceções para novaData
+  if (tenantContext.horarios && tenantContext.horarios.length > 0) {
+    const resSlots = availabilityEngine.gerarSlotsCandidatos({
+      data: novaData,
+      fusoHorario: fuso,
+      politica: tenantContext.politica || {},
+      horarios: tenantContext.horarios || [],
+      excecoes: tenantContext.excecoes || []
+    });
+
+    if (!resSlots.valido || resSlots.fechado || !resSlots.slots.includes(novoHorario)) {
+      return {
+        status: 200,
+        body: {
+          success: false,
+          acao: "reagendar",
+          mensagem: "O novo horário solicitado não está disponível para atendimento nesta data."
+        }
+      };
+    }
   }
 
   const consulta = await acaoConsultarAgendamentos({
@@ -1205,10 +1429,12 @@ module.exports = async function handler(req, res) {
       "AGENDAMENTO API:",
       JSON.stringify({
         acao,
-        telefone: mascararTelefone(dados.telefone),
-        cpf: mascararCpf(dados.cpf),
-        data: dados.data || dados.novaData || dados.dataAnterior || null,
-        horario: dados.horario || dados.novoHorario || dados.horarioAnterior || null
+        telefone: mascararTelefone(dados.telefone || dados.telefone_cliente),
+        cpf: mascararCpf(dados.cpf || dados.cpf_cliente),
+        dia: dados.dia !== undefined ? dados.dia : (dados.novo_dia !== undefined ? dados.novo_dia : null),
+        mes: dados.mes !== undefined ? dados.mes : (dados.novo_mes !== undefined ? dados.novo_mes : null),
+        data: dados.data || dados.novaData || dados.nova_data || dados.dataAnterior || dados.data_agendamento_atual || null,
+        horario: dados.horario || dados.novoHorario || dados.novo_horario || dados.horarioAnterior || dados.horario_agendamento_atual || null
       })
     );
 
@@ -1276,3 +1502,4 @@ module.exports = async function handler(req, res) {
 module.exports.formatarCpfExibicao = formatarCpfExibicao;
 module.exports.formatarTelefoneExibicao = formatarTelefoneExibicao;
 module.exports.formatarDataPtBr = formatarDataPtBr;
+module.exports.resolverDataEntrada = resolverDataEntrada;
